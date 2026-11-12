@@ -2,7 +2,7 @@
 
 Spanish-language Next.js owner panel using FusionAuth login and a same-origin backend-for-frontend (BFF). Each authenticated account manages only its own establishment, resolved by the backend from the validated access-token subject. No role, browser-selected establishment/session UUID, pasted bearer credential or legacy admin/staff fallback grants access.
 
-**Runtime prerequisite:** the currently reported local backend process predates the owner API and migrations V8–V10. A separately authorized backend refresh is required for live integration. This client does not restart services, migrate data, claim old ownerless records or simulate empty data on routing failures. Only exact `404 NO_ESTABLISHMENT` enables onboarding.
+**Runtime prerequisite:** the running backend must serve the owner API and the schema required by migrations V8–V10. The backend source and local listener were subsequently replaced externally; inspecting their revision/process identity alone does not prove the loaded build or migration state. Verify live operation through a legitimate account before claiming integration. Do not restart another process or apply migrations based on the earlier runtime snapshot. This client does not restart services, migrate data, claim old ownerless records or simulate empty data on routing failures. Only exact `404 NO_ESTABLISHMENT` enables onboarding.
 
 ## Local development
 
