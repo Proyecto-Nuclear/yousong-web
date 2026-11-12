@@ -70,8 +70,8 @@ export function QueuePanel({
       <h2>Cola pública y estado del servidor</h2>
       <p>
         Vista pública sin identidades ni voto personal. Actualización manual; no
-        hay reproductor, avance automático ni respaldo desde la lista
-        predeterminada.
+        hay reproductor ni avance automático del cliente. El backend puede usar
+        la lista predeterminada cuando no hay solicitudes.
       </p>
       <button
         type="button"
@@ -126,8 +126,8 @@ export function QueuePanel({
             </ol>
           ) : (
             <p>
-              Cola vacía. Un participante debe solicitar una canción antes de
-              avanzar.
+              Cola de solicitudes vacía. Siguiente puede iniciar una canción
+              disponible de la lista predeterminada según el backend.
             </p>
           )}
         </>
@@ -141,13 +141,13 @@ export function QueuePanel({
             op.busy ||
             !confirmed ||
             !session ||
+            session.estado !== "ABIERTA" ||
             snapshot?.estado !== SERVICE.OPEN ||
-            !!snapshot?.enReproduccion ||
-            !snapshot?.cola.length
+            !!snapshot?.enReproduccion
           }
           onClick={() => void mutate(false)}
         >
-          Iniciar siguiente solicitud en el servidor
+          Iniciar siguiente canción en el servidor
         </button>
         <label>
           Resultado que se registra

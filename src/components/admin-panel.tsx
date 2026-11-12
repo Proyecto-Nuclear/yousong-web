@@ -16,6 +16,13 @@ const VIEW = {
   SETUP: "Configuración y listas",
 } as const;
 type View = (typeof VIEW)[keyof typeof VIEW];
+const OWNER_CONTROL = {
+  PAUSE: "pause",
+  RESUME: "resume",
+  SERVICE: "service",
+  MAINTENANCE: "maintenance",
+} as const;
+type OwnerControl = (typeof OWNER_CONTROL)[keyof typeof OWNER_CONTROL];
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "No se pudo completar la operación.";
 
@@ -67,17 +74,20 @@ export function AdminPanel(props: { authenticated: boolean; roles: string[] }) {
 
 function AdminPanelContent({
   authenticated,
-  roles,
 }: {
   authenticated: boolean;
   roles: string[];
 }) {
-  const isAdmin = roles.includes("ADMINISTRADOR");
+  // Any authenticated account may operate its own establishment. Roles are
+  // display hints only; backend JWT-sub ownership is the authorization.
+  const ownerAccess = authenticated;
   const [api, setApi] = useState<DemoApi | null>(null);
   const [items, setItems] = useState<Establishment[]>([]);
   const [selected, setSelected] = useState<Establishment | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [readiness, setReadiness] = useState("Disponibilidad sin consultar.");
+  const [hasList, setHasList] = useState<boolean | null>(null);
   const [qr, setQr] = useState<Qr | null>(null);
   const [qrError, setQrError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -113,11 +123,32 @@ function AdminPanelContent({
     setSession(null);
     setQr(null);
     setLoaded(false);
+    setHasList(null);
+    setReadiness("Disponibilidad sin confirmar.");
     setError("");
     setQrError("");
     setNotice("");
     setBusy(true);
     await Promise.all([
+      client
+        .currentList(establishment.id)
+        .then((list) => {
+          if (version === generation.current) setHasList(list !== null);
+        })
+        .catch((e) => {
+          if (version === generation.current) setError(message(e));
+        }),
+      client
+        .availability(establishment.qrSlug)
+        .then((value) => {
+          if (version === generation.current)
+            setReadiness(
+              `Servicio: ${value.servicio}. ${value.puedeParticipar ? "Disponible para participar mediante QR." : "No admite participantes ahora."}${value.proximaApertura ? ` Próxima apertura: ${value.proximaApertura}.` : ""}`,
+            );
+        })
+        .catch((e) => {
+          if (version === generation.current) setReadiness(message(e));
+        }),
       client
         .currentSession(establishment.id)
         .then((value) => {
@@ -129,7 +160,7 @@ function AdminPanelContent({
         .catch((e) => {
           if (version === generation.current) setError(message(e));
         }),
-      (isAdmin ? client.qr(establishment.id) : Promise.resolve(null))
+      (ownerAccess ? client.qr(establishment.id) : Promise.resolve(null))
         .then((value) => {
           if (version === generation.current) setQr(value);
         })
@@ -148,6 +179,7 @@ function AdminPanelContent({
     setError("");
     setBusy(true);
     const version = ++generation.current;
+    setLoaded(false);
     try {
       const client = new DemoApi();
       const establishments = await client.establishments();
@@ -156,6 +188,11 @@ function AdminPanelContent({
       setItems(establishments);
       if (establishments[0]) await load(client, establishments[0]);
       else {
+        setSelected(null);
+        setSession(null);
+        setQr(null);
+        setLoaded(false);
+        setHasList(null);
         setBusy(false);
         pending.current = false;
       }
@@ -181,6 +218,10 @@ function AdminPanelContent({
     setBusy(true);
     setError("");
     setNotice("");
+    setReadiness(
+      "Disponibilidad sin confirmar. Actualiza el estado después de operar.",
+    );
+    setLoaded(false);
     try {
       if (session) {
         const result = await api.closeSession(session.id);
@@ -195,10 +236,56 @@ function AdminPanelContent({
         setSession(result);
         setNotice("Sesión abierta en el backend.");
       }
+      setLoaded(true);
     } catch (e) {
       if (version === generation.current) {
         setError(message(e));
         setLoaded(false);
+      }
+    } finally {
+      if (version === generation.current) {
+        setBusy(false);
+        pending.current = false;
+      }
+    }
+  }
+  async function control(action: OwnerControl) {
+    if (!api || !selected || !loaded || pending.current) return;
+    const version = generation.current;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setLoaded(false);
+    try {
+      if (action === "pause" || action === "resume") {
+        const value =
+          action === "pause"
+            ? await api.pauseSession()
+            : await api.resumeSession();
+        if (version !== generation.current) return;
+        setSession(value);
+        setNotice(
+          `Estado confirmado por el backend: ${value.estado}. Actualiza la disponibilidad pública.`,
+        );
+      } else {
+        const value =
+          action === "service"
+            ? await api.resumeService()
+            : await api.endMaintenance();
+        if (version !== generation.current) return;
+        setSelected(value);
+        setNotice(
+          "Cambio confirmado por el backend. Actualiza la disponibilidad pública.",
+        );
+      }
+      setLoaded(true);
+      setReadiness("Disponibilidad sin confirmar. Actualiza el estado.");
+    } catch (e) {
+      if (version === generation.current) {
+        setError(message(e));
+        setLoaded(false);
+        setReadiness("Resultado sin confirmar. Actualiza antes de repetir.");
       }
     } finally {
       if (version === generation.current) {
@@ -322,30 +409,14 @@ function AdminPanelContent({
         ) : (
           <>
             <section className="selector card">
-              <label htmlFor="establishment">Establecimiento</label>
-              <select
-                id="establishment"
-                value={selected?.id ?? ""}
-                disabled={busy || items.length === 0}
-                onChange={(event) => {
-                  const item = items.find((e) => e.id === event.target.value);
-                  if (item) void load(api, item);
-                }}
-              >
-                {!items.length && (
-                  <option value="">Sin establecimientos</option>
-                )}
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre}
-                    {!item.activo ? " · Inactivo" : ""}
-                  </option>
-                ))}
-              </select>
+              <p>
+                Mi establecimiento:{" "}
+                {selected?.nombre ?? "Sin establecimiento asociado"}
+              </p>
               <button
                 type="button"
-                disabled={busy || !selected}
-                onClick={() => selected && void load(api, selected)}
+                disabled={busy}
+                onClick={() => void connect()}
               >
                 Actualizar estado
               </button>
@@ -354,14 +425,13 @@ function AdminPanelContent({
               <section className="card">
                 <h2>Sin establecimientos</h2>
                 <p>
-                  La API no devolvió establecimientos.{" "}
-                  {isAdmin
-                    ? "Puedes crear el primero a continuación."
-                    : "Solicita su configuración a un administrador."}
+                  Esta cuenta no tiene un establecimiento asociado. Puedes crear
+                  el tuyo a continuación. Los establecimientos antiguos sin
+                  propietario no se asignan automáticamente.
                 </p>
               </section>
             )}
-            {isAdmin && (!items.length || view === VIEW.SETUP) && (
+            {ownerAccess && !items.length && (
               <EstablishmentForm
                 key={`create:${selected?.id ?? "empty"}`}
                 api={api}
@@ -372,7 +442,7 @@ function AdminPanelContent({
               <>
                 {view === VIEW.SETUP && (
                   <>
-                    {isAdmin && (
+                    {ownerAccess && (
                       <EstablishmentForm
                         key={selected.id}
                         api={api}
@@ -384,7 +454,7 @@ function AdminPanelContent({
                       key={`list:${selected.id}`}
                       api={api}
                       establishmentId={selected.id}
-                      isAdmin={isAdmin}
+                      canManage={ownerAccess}
                     />
                   </>
                 )}
@@ -397,14 +467,13 @@ function AdminPanelContent({
                         <QrCard qr={qr} />
                       ) : (
                         <p>
-                          {!isAdmin
-                            ? "El QR requiere el rol ADMINISTRADOR."
-                            : qrError ||
-                              (busy ? "Cargando QR…" : "QR no disponible.")}
+                          {qrError ||
+                            (busy ? "Cargando QR…" : "QR no disponible.")}
                         </p>
                       )}
                       <p className="muted">
-                        Consultar y descargar el QR requiere ADMINISTRADOR.
+                        El QR es público y no contiene credenciales de
+                        participante.
                       </p>
                     </section>
                     <section className="card">
@@ -432,12 +501,18 @@ function AdminPanelContent({
                       ) : (
                         <p>No hay una sesión en operación.</p>
                       )}
-                      {isAdmin && (
+                      {ownerAccess && (
                         <button
                           type="button"
                           className={session ? "danger" : "primary"}
                           disabled={
-                            busy || !loaded || (!selected.activo && !session)
+                            busy ||
+                            !loaded ||
+                            (!session &&
+                              (!selected.activo ||
+                                selected.pausado ||
+                                selected.enMantenimiento ||
+                                !hasList))
                           }
                           onClick={() => void mutate()}
                         >
@@ -445,20 +520,72 @@ function AdminPanelContent({
                         </button>
                       )}
                       <p>
-                        Operación exclusiva de ADMINISTRADOR. Abrir requiere un
-                        local activo y una lista predeterminada configurada.
+                        Abrir requiere un local activo, sin pausa ni
+                        mantenimiento y una lista predeterminada configurada.
                       </p>
-                      <hr />
+                      {!session && hasList === false && (
+                        <p>
+                          Configura una lista predeterminada antes de abrir la
+                          sesión. En Configuración y listas, selecciona
+                          canciones reales y publica una versión; después
+                          actualiza el estado.
+                        </p>
+                      )}
+                      <output className="status" aria-live="polite">
+                        {readiness}
+                      </output>
                       <p>
-                        Pausar solicitudes, mantenimiento y programación
-                        automática: no disponibles en la API actual.
+                        Sesión y servicio son estados distintos. El horario
+                        también puede impedir participar aunque la sesión esté
+                        abierta. Horarios vacíos no restringen el servicio.
+                      </p>
+                      {session?.estado === "ABIERTA" && (
+                        <button
+                          type="button"
+                          disabled={busy || !loaded}
+                          onClick={() => void control("pause")}
+                        >
+                          Pausar sesión
+                        </button>
+                      )}
+                      {session?.estado === "PAUSADA" && (
+                        <button
+                          type="button"
+                          disabled={busy || !loaded}
+                          onClick={() => void control("resume")}
+                        >
+                          Reanudar sesión
+                        </button>
+                      )}
+                      {selected.pausado && (
+                        <button
+                          type="button"
+                          disabled={busy || !loaded}
+                          onClick={() => void control("service")}
+                        >
+                          Reanudar servicio del establecimiento
+                        </button>
+                      )}
+                      {selected.enMantenimiento && (
+                        <button
+                          type="button"
+                          disabled={busy || !loaded || !!session}
+                          onClick={() => void control("maintenance")}
+                        >
+                          Finalizar mantenimiento
+                        </button>
+                      )}
+                      <p>
+                        No se cambian horarios, pausas ni mantenimiento
+                        automáticamente. Si el horario impide participar, debe
+                        revisarse en la configuración del backend.
                       </p>
                     </section>
                   </div>
                 )}
                 {(view === VIEW.PANEL || view === VIEW.QUEUE) && (
                   <QueuePanel
-                    key={`queue:${selected.id}:${session?.id ?? "none"}`}
+                    key={`queue:${selected.id}:${session?.id ?? "none"}:${session?.estado}:${selected.pausado}:${selected.enMantenimiento}:${loaded}`}
                     api={api}
                     establishment={selected}
                     session={loaded ? session : null}

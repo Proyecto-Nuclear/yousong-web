@@ -1,6 +1,8 @@
-# YouSong administrative web
+# YouSong owner web
 
-Spanish-language Next.js administrative panel using FusionAuth login and a same-origin backend-for-frontend (BFF). Existing session, establishment, QR and catalog functionality is preserved; no pasted bearer credentials or direct browser/backend requests remain.
+Spanish-language Next.js owner panel using FusionAuth login and a same-origin backend-for-frontend (BFF). Each authenticated account manages only its own establishment, resolved by the backend from the validated access-token subject. No role, browser-selected establishment/session UUID, pasted bearer credential or legacy admin/staff fallback grants access.
+
+**Runtime prerequisite:** the currently reported local backend process predates the owner API and migrations V8–V10. A separately authorized backend refresh is required for live integration. This client does not restart services, migrate data, claim old ownerless records or simulate empty data on routing failures. Only exact `404 NO_ESTABLISHMENT` enables onboarding.
 
 ## Local development
 
@@ -29,49 +31,46 @@ Select **Iniciar sesión con FusionAuth**, authenticate at the provider, then **
 - UI roles are derived server-side from RS256 access-token signature verification with issuer, audience (client ID), expiry, subject and `tty=at` checks. Keys come from the configured issuer's `/.well-known/jwks.json`; the inspected provider publishes this path. Backend authorization remains authoritative and backend 401/403 statuses are preserved.
 - The JWT callback and BFF share refresh logic: 30-second expiry margin, authenticated `client_secret_post` refresh grant, rotation persisted immediately, old refresh token preserved if omitted. Failed refresh invalidates the server entry and requires reauthentication. One promise per entry prevents concurrent refresh-token reuse, including parallel BFF/session requests. Logout during refresh cannot resurrect the entry.
 - **Single Node worker only:** store capacity 1,000 sessions, absolute lifetime eight hours, opportunistic expiry cleanup. Restarts, capacity exhaustion and unknown IDs fail closed; restarts require login again. No distributed persistence, multiworker synchronization, horizontal scaling or serverless session continuity is claimed. A production multiworker rollout requires a shared transactional token store, not separate per-instance refresh caches. Expired entries are bounded and reclaimed on lookup/new login; there is no indefinite session lifetime.
-- The BFF allowlists only the route/method contracts below, UUID/slug path parameters and catalog query parameters. It never forwards client Authorization, cookies or arbitrary destinations. Only create/edit/list-publication/playback-finish routes accept JSON: a streaming 16 KiB byte limit, five-second read deadline, object/field/type/enum/limit validation and exact Origin checks run before credential lookup or upstream effects. PUT/PATCH share the existing cookie-only route handler. Legacy commands remain bodyless. New-contract error responses expose only a bounded problem code, not upstream diagnostics. Backend requests use only server access tokens, no redirects/cookies/cache and a 20-second timeout. Refresh/OIDC/JWKS requests also have timeouts and refuse redirects. Responses omit backend cookies/redirect headers and are not cached.
+- The BFF allowlists only the route/method contracts below, public slug parameters and bounded catalog query parameters. Legacy `/api/admin` and `/api/staff` paths and owner UUID parameters are rejected before credentials or backend effects. It never forwards client Authorization, cookies or arbitrary destinations. Only create/edit/list-publication/playback-finish routes accept JSON: a streaming 16 KiB byte limit, five-second read deadline, object/field/type/enum/limit validation and exact Origin checks run before credential lookup or upstream effects. PUT/PATCH share the existing cookie-only route handler. Session/service/playback-start commands remain bodyless. Error responses expose only a bounded problem code, not upstream diagnostics. Backend requests use only server access tokens, no redirects/cookies/cache and a 20-second timeout. Refresh/OIDC/JWKS requests also have timeouts and refuse redirects. Responses omit backend cookies/redirect headers and are not cached.
 - Authentication errors are not logged with provider payloads, cookies or credentials. Infrastructure rate limiting, deployment CSP/security headers and operational monitoring remain deployment work; no production-readiness claim is made.
 
 ## Connected contracts
 
 Browser routes prefix the following backend paths with `/api/bff`:
 
-| Capability | Backend contract | Role |
-| --- | --- | --- |
-| Establishments | `GET /api/staff/establecimientos` | ADMINISTRADOR or OPERADOR |
-| Current session | `GET /api/staff/establecimientos/{id}/sesion-actual` | ADMINISTRADOR or OPERADOR |
-| Open session | `POST /api/admin/establecimientos/{id}/sesiones` | ADMINISTRADOR |
-| Close session | `POST /api/admin/sesiones/{id}/cierre` | ADMINISTRADOR |
-| Access QR | `GET /api/admin/establecimientos/{id}/qr` | ADMINISTRADOR |
-| Catalog | `GET /api/staff/catalogo/busqueda?q=...&pagina=...` | ADMINISTRADOR or OPERADOR |
-| Suggestions | `GET /api/staff/catalogo/sugerencias?q=...` | ADMINISTRADOR or OPERADOR |
-| Create establishment | `POST /api/admin/establecimientos` | ADMINISTRADOR |
-| Edit establishment | `PATCH /api/admin/establecimientos/{id}` | ADMINISTRADOR |
-| Current default list | `GET /api/staff/establecimientos/{id}/lista-defecto` | ADMINISTRADOR or OPERADOR |
-| Publish list | `PUT /api/admin/establecimientos/{id}/lista-defecto` | ADMINISTRADOR |
-| List history | `GET /api/admin/establecimientos/{id}/listas-defecto` | ADMINISTRADOR |
-| Public queue snapshot | `GET /api/public/establecimientos/{qrSlug}/cola` | Public backend route; this BFF requires staff authentication |
-| Start next server request | `POST /api/staff/sesiones/{id}/reproduccion/siguiente` | ADMINISTRADOR or OPERADOR |
-| Record playback finish | `POST /api/staff/sesiones/{id}/reproduccion/fin` | ADMINISTRADOR or OPERADOR |
+All owner paths below are relative to `/api/mi-establecimiento`; they require a valid access token, not ADMINISTRADOR/OPERADOR roles. Only the backend resolves ownership. Local IDs retained by component operation scopes are never sent in owner paths or bodies.
+
+| Capability | Method and relative path |
+| --- | --- |
+| Read/create/update own establishment | `GET / POST / PATCH` root |
+| Current session / access QR | `GET /sesion-actual`, `GET /qr` |
+| Open / close | `POST /sesiones`, `POST /sesion/cierre` |
+| Pause / resume session | `POST /sesion/pausa`, `POST /sesion/reanudacion` |
+| Resume establishment service / end maintenance | `POST /reanudacion`, `POST /mantenimiento/fin` |
+| Catalog / suggestions | `GET /catalogo/busqueda?q=...&pagina=...`, `GET /catalogo/sugerencias?q=...` |
+| Current/publish default list / history | `GET / PUT /lista-defecto`, `GET /listas-defecto` |
+| Manual server playback state | `POST /reproduccion/siguiente`, `POST /reproduccion/fin` |
+
+Public effective availability uses `GET /api/public/establecimientos/{qrSlug}` and queue snapshots use its `/cola` suffix. These backend projections are public; this BFF still requires authenticated cookies. Participant join/credentials are not exposed through the web BFF.
 
 Published history summaries use the backend field `totalCanciones` for the stored version's song count; counts are not fabricated by the client.
 
-Only `404` with problem code `NO_ACTIVE_SESSION` means no current session. Opening requires an active establishment and configured default list. Closing requires confirmation and shows the backend's actual unattended-request count. After mutation errors, refresh state before retrying: a transport failure may follow a successful write. UI role gating hides admin-only operations for operators; it never replaces backend authorization.
+Only `404` with problem code `NO_ACTIVE_SESSION` means no current session. Opening requires an active establishment and configured default list. Closing requires confirmation and shows the backend's actual unattended-request count. After mutation errors, refresh state before retrying: a transport failure may follow a successful write. Authenticated roleless accounts see the same owner controls. Missing ownership enables creation, never a foreign-ID selector. Service pause, maintenance and configured opening hours may prevent participation independently from session state.
 
-QR SVG remains isolated in a revocable image-context blob, never injected as HTML. Catalog results retain actual title, artist/channel, duration and pagination. Remote thumbnails are deliberately not fetched. Metrics, blocking, pause/resume, maintenance, scheduling and actual audio playback remain unavailable, without synthetic data.
+QR SVG remains isolated in a revocable image-context blob, never injected as HTML. Catalog results retain actual title, artist/channel, duration and pagination. Remote thumbnails are deliberately not fetched. Session pause/resume is explicit. Existing establishment pauses and maintenance can be explicitly ended, never silently cleared. Schedule editing, starting maintenance, moderation, SSE and actual audio playback are outside this unit. Empty backend schedules are unrestricted; nonempty schedules remain authoritative and are not changed by opening a session.
 
 ## Functional demo workflow (manual acceptance still required)
 
 Only perform these steps against an explicitly authorized disposable target with legitimately provisioned staff/participants. The implementation and automated tests do not seed records or execute this demo.
 
-1. Log in as ADMINISTRADOR and load establishments. If empty, use **Crear establecimiento**. In **Configuración y listas**, edit name/time zone/active status; the printed QR slug is immutable. A session in progress prevents deactivation.
-2. Search the catalog and select actual results or known-song suggestions into the list draft. Suggestions debounce by 350 ms; searching and pagination are explicit. Publish 1–200 unique eleven-character video IDs, with SECUENCIAL or ALEATORIA rotation. Consult the current list and administrator-only history to verify version/name/count/date. Drafts survive publication/provider errors. Catalog configuration, quota and network availability are real prerequisites.
-3. Open the session, display/download its QR and have a legitimate participant enter through QR and explicitly consent in the participant application. No staff login is introduced for participants.
-4. Have a participant request a real catalog song first. In **Cola musical**, manually refresh the public snapshot. It shows service state (ABIERTO/PAUSADO/CERRADO), queue version, actual votes, estimated waits and current server playback state; it has no participant identities or personal `votado` field.
-5. An OPERADOR or ADMINISTRADOR can start the next queued request and record COMPLETADA, SALTADA or FALLIDA. These controls change server state only: there is no audio player, automatic advance or default-list fallback. QUEUE_EMPTY, PLAYBACK_IN_PROGRESS and NO_ACTIVE_PLAYBACK remain errors, not simulated player success.
-6. Close the session as administrator and verify the actual unattended-request count and participant access invalidation. Refresh the public queue to inspect the closed snapshot.
+1. Log in with a legitimately provisioned account and load **Mi establecimiento**. If this account has none, use **Crear establecimiento**. In **Configuración y listas**, edit name/time zone/active status; the printed QR slug is immutable. A session in progress prevents deactivation.
+2. Search the catalog and select actual results or known-song suggestions into the list draft. Suggestions debounce by 350 ms; searching and pagination are explicit. Publish 1–200 unique eleven-character video IDs, with SECUENCIAL or ALEATORIA rotation. Consult the current list and owner history to verify version/name/count/date. Drafts survive publication/provider errors. Catalog configuration, quota and network availability are real prerequisites.
+3. Refresh establishment state after publication, then open the session. `409 NO_DEFAULT_LIST` remains a legitimate rejection. Read effective availability separately: session states are ABIERTA/PAUSADA/CERRANDO/CERRADA, service states are ABIERTO/PAUSADO/CERRADO/MANTENIMIENTO. Display/download the QR and have a legitimate participant enter through QR and explicitly consent in the participant application. No staff login is introduced for participants.
+4. In **Cola musical**, manually refresh the public snapshot. A participant can request a real catalog song. The snapshot shows service state (including MANTENIMIENTO), queue version, actual votes, estimated waits and current server playback state; it has no participant identities or personal `votado` field.
+5. The owner can start the next song and record COMPLETADA, SALTADA or FALLIDA. The backend can fall back to its default list with `origen: DEFECTO`, null `solicitudId` and zero votes; request playback uses `origen: SOLICITUD`. Finish includes nullable `motivoCodigo`; skipping without an explicit reason uses backend SALTO_MANUAL. These controls change server state only: no audible player or client automatic advance is claimed. QUEUE_EMPTY, PLAYBACK_IN_PROGRESS and NO_ACTIVE_PLAYBACK remain errors, not simulated player success.
+6. Optionally pause/resume the session explicitly, refreshing public availability afterward. Participants retain access during pause, but cannot join/request/vote. Close the session as owner and verify the actual unattended-request count and participant access invalidation. Refresh the public queue to inspect the closed snapshot.
 
-Mutations are never retried automatically. Acknowledgments and authoritative reads determine UI state; duplicate clicks are fenced synchronously, older queue versions are rejected, and late completions are ignored after scope/unmount/auth changes. Queue mutation rejection or an uncertain network result triggers only a queue read, not another mutation. Failed creation/edit/publication keeps the draft and requires consulting server state before another save. Explicit refresh replaces polling, and no API request starts during prerender. Staff UI hints never replace backend authorization.
+Mutations are never retried automatically. Acknowledgments and authoritative reads determine UI state; duplicate clicks are fenced synchronously, older queue versions are rejected, and late completions are ignored after scope/unmount/auth changes. Queue mutation rejection or an uncertain network result triggers only a queue read, not another mutation. Failed creation/edit/publication keeps the draft and requires consulting server state before another save. Explicit refresh replaces polling, and no API request starts during prerender. Role hints never replace backend ownership authorization.
 
 ## Verification
 
@@ -79,11 +78,13 @@ Mutations are never retried automatically. Acknowledgments and authoritative rea
 node scripts/test.mjs
 node node_modules/typescript/bin/tsc --noEmit --incremental false
 node node_modules/@biomejs/biome/bin/biome check
+git diff --check
+# Parent-owned production validation:
 node node_modules/next/dist/bin/next build
 ```
 
 Tests compile TypeScript to CommonJS in a fresh system temporary directory, run Node's test runner, and clean up the directory. They use synthetic credentials, mocked transport/discovery and generated signing keys; no account login or authenticated backend mutation is performed. Tests exercise Auth.js's generated S256/state/nonce/cookies, JWT verification, refresh/rotation/failure/concurrency, session projection, BFF rejection/header/status boundaries and preserved DTO contracts.
 
-Final functional-demo checks: 44/44 Node tests passed (including all 19 previous tests), TypeScript passed, and Biome passed with three pre-existing informational hints in unchanged authentication tests. Independent review found that the initial history contract incorrectly expected `cantidadCanciones`; the backend actually returns `totalCanciones`. A regression through the public DemoApi first failed with the invalid-response error (43 passing, one failing), then all 44 tests passed after correcting the contract, guard, history display and fixture. The parent rebuilt this corrected source in the background: exit 0, successful compilation, type checking and generation of all four static pages. The build warned that an unrelated lockfile outside this repository was ignored; no configuration or external file was changed.
+The previous client baseline passed 44 Node tests and production build. Owner-route migration RED was observed with `node scripts/test.mjs`: exit 1, 18 passing / 30 failing out of 48, including obsolete paths, missing onboarding handling, legacy-route acceptance and MANTENIMIENTO rejection. A subsequent focused run reached 46/48, exposing the newly requested recovery-route allowlist and a stale queue-error expectation. Final owner-unit checks passed: 50/50 Node tests (all 44 previous cases retained with requested route/DTO migration), TypeScript with no diagnostics, Biome with only the three existing informational template hints, and `git diff --check`. Normalization initially flagged one new semantic-element issue, corrected by using `<output>` for readiness status. The parent subsequently observed production-build exit 0, added two independently exercised rejection/deadline regression cases, and observed 52/52 tests, TypeScript, Biome and `git diff --check` exit 0. Independent verification found no candidate blocker across 25 synthetic-transport probes and nine baseline differential cases. Its isolated Biome command failed because the scratch snapshot lacked `.gitignore`; that was not a candidate lint defect and was not retried. The original-tree Biome check passed with the three existing informational hints.
 
 Browser, keyboard/responsive prototype fidelity, actual login/refresh/logout, and authenticated backend operation still require independent proof. Unit tests and build success cannot establish those results.

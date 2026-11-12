@@ -44,6 +44,16 @@ test("UI roles require verified access-token signature, issuer, audience, expiry
     ),
     ["ADMINISTRADOR"],
   );
+  // Valid roleless accounts still authenticate; roles never determine ownership.
+  assert.deepEqual(
+    await accessTokenRoles(
+      await sign({ ...claims, roles: [] }),
+      keys,
+      config.issuer,
+      config.clientId,
+    ),
+    [],
+  );
   for (const values of [
     { ...claims, tty: "id" },
     { ...claims, iss: "https://wrong.test" },
@@ -301,7 +311,7 @@ test("BFF rejects unauthenticated requests, arbitrary paths/methods/queries and 
     assert.equal(opts.calls, 0);
   }
   const opts = options();
-  const path = `/api/bff/api/admin/establecimientos/${id}/sesiones`;
+  const path = "/api/bff/api/mi-establecimiento/sesiones";
   for (const origin of [null, "https://evil.test"]) {
     const response = await proxyRequest(
       new Request(config.appUrl + path, {
@@ -315,7 +325,7 @@ test("BFF rejects unauthenticated requests, arbitrary paths/methods/queries and 
   assert.equal(
     (
       await proxyRequest(
-        new Request(config.appUrl + "/api/bff/api/staff/establecimientos", {
+        new Request(config.appUrl + "/api/bff/api/mi-establecimiento", {
           method: "DELETE",
         }),
         opts,
@@ -326,7 +336,7 @@ test("BFF rejects unauthenticated requests, arbitrary paths/methods/queries and 
   assert.equal(
     (
       await proxyRequest(
-        new Request(config.appUrl + "/api/bff/api/staff/establecimientos"),
+        new Request(config.appUrl + "/api/bff/api/mi-establecimiento"),
         { ...opts, credential: async () => null },
       )
     ).status,
@@ -338,7 +348,7 @@ test("BFF forwards only server Authorization, preserves 401/403 and backend DTO,
   for (const status of [200, 401, 403]) {
     const opts = options();
     opts.transport = async (url, init) => {
-      assert.equal(url, `${config.apiUrl}/api/staff/establecimientos`);
+      assert.equal(url, `${config.apiUrl}/api/mi-establecimiento`);
       assert.equal(
         new Headers(init?.headers).get("Authorization"),
         "Bearer server-access",
@@ -357,7 +367,7 @@ test("BFF forwards only server Authorization, preserves 401/403 and backend DTO,
       );
     };
     const response = await proxyRequest(
-      new Request(config.appUrl + "/api/bff/api/staff/establecimientos", {
+      new Request(config.appUrl + "/api/bff/api/mi-establecimiento", {
         headers: { Authorization: "attacker", Cookie: "untrusted" },
       }),
       opts,
