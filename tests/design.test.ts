@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Cover } from "../src/components/cover";
 import { ConfirmDialog } from "../src/components/owner/confirm-dialog";
 import { ErrorCallout } from "../src/components/owner/feedback";
+import { OwnerNavigation } from "../src/components/owner/navigation";
 import { OperationStatus } from "../src/components/owner/operation";
 import { VoteCount } from "../src/components/owner/queue-panel";
 import { ToastRegion } from "../src/components/owner/toast";
@@ -21,7 +22,7 @@ import {
   votesLabel,
   waitLabel,
 } from "../src/lib/format";
-import { ownerError } from "../src/lib/owner-copy";
+import { OWNER_VIEWS, ownerError } from "../src/lib/owner-copy";
 import {
   readTheme,
   resolveTheme,
@@ -30,6 +31,30 @@ import {
   writeTheme,
 } from "../src/lib/theme";
 import { TIME_ZONES, timeZoneOptions } from "../src/lib/time-zones";
+
+test("responsive navigation retains accessible names independently of hidden labels", () => {
+  for (const view of Object.values(OWNER_VIEWS)) {
+    const html = renderToStaticMarkup(
+      createElement(OwnerNavigation, {
+        view,
+        onNavigate() {
+          assert.fail("Prerender must not navigate");
+        },
+      }),
+    );
+    const buttons = [...html.matchAll(/<button\b[^>]*>/g)].map(([tag]) => tag);
+    assert.equal(buttons.length, Object.values(OWNER_VIEWS).length);
+    for (const [index, name] of Object.values(OWNER_VIEWS).entries()) {
+      assert.equal(buttons[index].match(/\baria-label="([^"]*)"/)?.[1], name);
+      assert.equal(
+        buttons[index].includes('aria-current="page"'),
+        name === view,
+      );
+      assert.equal(buttons[index].includes('type="button"'), true);
+    }
+    assert.match(html, /class="nav-item__short" aria-hidden="true"/);
+  }
+});
 
 test("votes and counts pluralize in Spanish", () => {
   assert.equal(votesLabel(0), "0 votos");

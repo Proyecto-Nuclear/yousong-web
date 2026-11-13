@@ -6,7 +6,6 @@ import type { Establishment, Qr, Session } from "@/lib/admin-api";
 import { DemoApi } from "@/lib/demo-api";
 import { nightLabel, plural } from "@/lib/format";
 import {
-  OWNER_VIEW_SHORT,
   OWNER_VIEW_SUBTITLE,
   ownerError,
   sessionNotice,
@@ -19,14 +18,10 @@ import {
   CheckIcon,
   CloseIcon,
   HeadphonesIcon,
-  HomeIcon,
   LogoutIcon,
   PauseIcon,
   PlayIcon,
-  QrIcon,
-  QueueIcon,
   RefreshIcon,
-  SettingsIcon,
   StopIcon,
   WrenchIcon,
 } from "./icons";
@@ -34,18 +29,13 @@ import { ConfirmDialog } from "./owner/confirm-dialog";
 import { EstablishmentForm } from "./owner/establishment-form";
 import { ErrorCallout, Loading } from "./owner/feedback";
 import { ListConfiguration } from "./owner/list-configuration";
+import { OwnerNavigation } from "./owner/navigation";
 import { QrCard } from "./owner/qr-card";
 import { QueuePanel } from "./owner/queue-panel";
 import { ThemeControls } from "./owner/theme-controls";
 import { ToastProvider, useNotify } from "./owner/toast";
 
 type View = (typeof VIEW)[keyof typeof VIEW];
-const VIEW_ICON = {
-  [VIEW.PANEL]: HomeIcon,
-  [VIEW.SESSION]: QrIcon,
-  [VIEW.QUEUE]: QueueIcon,
-  [VIEW.SETUP]: SettingsIcon,
-} as const;
 const OWNER_CONTROL = {
   PAUSE: "pause",
   RESUME: "resume",
@@ -384,27 +374,7 @@ function AdminPanelContent({
           <p className="sidebar__label" id="nav-label">
             Operación del local
           </p>
-          <nav className="sidebar__nav" aria-labelledby="nav-label">
-            {Object.values(VIEW).map((name) => {
-              const NavIcon = VIEW_ICON[name];
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  className="nav-item"
-                  data-view={name}
-                  aria-current={view === name ? "page" : undefined}
-                  onClick={() => go(name)}
-                >
-                  <NavIcon size={22} />
-                  <span className="nav-item__long">{name}</span>
-                  <span className="nav-item__short" aria-hidden="true">
-                    {OWNER_VIEW_SHORT[name]}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
+          <OwnerNavigation view={view} onNavigate={go} />
           <div className="sidebar__footer">
             <p className="sidebar__motto">
               Una sala.
