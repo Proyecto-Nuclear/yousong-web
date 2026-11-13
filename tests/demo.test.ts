@@ -1,8 +1,693 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ListConfiguration } from "../src/components/owner/list-configuration";
+import { OperationStatus } from "../src/components/owner/operation";
+import {
+  NowPlaying,
+  QueuePanel,
+  QueueSongs,
+} from "../src/components/owner/queue-panel";
 import { proxyRequest } from "../src/lib/bff";
 import { DemoApi } from "../src/lib/demo-api";
+import {
+  type DefaultList,
+  type Queue,
+  ROTATION,
+} from "../src/lib/demo-contracts";
 import { OperationGate } from "../src/lib/demo-operation";
+import { ListDraft } from "../src/lib/list-draft";
+import { OWNER_VIEWS, ownerError, sessionNotice } from "../src/lib/owner-copy";
+import {
+  type RefreshClock,
+  refreshQueue,
+  startQueueRefresh,
+} from "../src/lib/queue-refresh";
+
+test("owner navigation keeps one place to search and save the local list", () => {
+  assert.deepEqual(Object.values(OWNER_VIEWS), [
+    "Panel operativo",
+    "Sesión y QR",
+    "Cola musical",
+    "Configuración y listas",
+  ]);
+});
+
+test("list workspace keeps search and save together without prerender reads or nested forms", () => {
+  let requests = 0;
+  const api = new DemoApi(async () => {
+    requests++;
+    throw Error("unexpected request");
+  });
+  for (const active of [false, true]) {
+    const html = renderToStaticMarkup(
+      createElement(ListConfiguration, {
+        api,
+        establishmentId: id,
+        canManage: true,
+        active,
+      }),
+    );
+    assert.match(html, /Añadir canciones/);
+    assert.doesNotMatch(
+      html,
+      /backend|servidor|Consultar lista e historial|Publicar nueva versión/,
+    );
+    assert.match(html, /Guardar lista/);
+    assert.doesNotMatch(html, /Guarda tu lista en Configuración/);
+    assert.equal(/hidden=""/.test(html), !active);
+    const tags = html.match(/<\/?form\b[^>]*>/g) ?? [];
+    let depth = 0;
+    for (const tag of tags) {
+      depth += tag.startsWith("</") ? -1 : 1;
+      assert.ok(depth <= 1);
+    }
+    assert.equal(depth, 0);
+  }
+  assert.equal(requests, 0);
+});
+
+test("read-only list scope preserves current-list reads without history or writes", async () => {
+  const calls: string[] = [];
+  const model = new ListDraft(
+    {
+      async currentList() {
+        calls.push("current");
+        return list as DefaultList;
+      },
+      async listHistory() {
+        calls.push("history");
+        return [];
+      },
+      async publishList() {
+        calls.push("WRITE");
+        return list as DefaultList;
+      },
+    },
+    id,
+    false,
+  );
+  model.enter();
+  await settle();
+  const before = model.getSnapshot();
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  await model.publish();
+  assert.deepEqual(calls, ["current"]);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.current?.version, 1);
+  model.dispose();
+});
+
+test("owner copy preserves session distinctions and hides unexpected diagnostic text", () => {
+  assert.deepEqual(
+    ["ABIERTA", "PAUSADA", "CERRANDO", "CERRADA", "unknown"].map(sessionNotice),
+    [
+      "Sesión activa",
+      "Sesión en pausa",
+      "Finalizando sesión",
+      "Sesión finalizada",
+      "Estado por confirmar",
+    ],
+  );
+  assert.equal(
+    ownerError(Error("private diagnostic")),
+    "No pudimos confirmar la acción. Actualiza el estado antes de intentarlo otra vez.",
+  );
+});
+
+test("owner progress and errors avoid technical diagnostics", () => {
+  const busy = renderToStaticMarkup(
+    createElement(OperationStatus, { busy: true, error: "", notice: "" }),
+  );
+  assert.match(busy, /Cargando…/);
+  assert.doesNotMatch(busy, /servidor|backend|API/);
+  const error = renderToStaticMarkup(
+    createElement(OperationStatus, {
+      busy: false,
+      error: "No tienes permisos para esta operación en el backend.",
+      notice: "",
+    }),
+  );
+  assert.match(error, /permisos/);
+  assert.doesNotMatch(error, /backend/);
+  const notice = renderToStaticMarkup(
+    createElement(OperationStatus, {
+      busy: false,
+      error: "",
+      notice: "Lista guardada",
+    }),
+  );
+  assert.match(notice, /Lista guardada/);
+});
+
+const settle = async () => {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+};
+
+test("automatic queue reads retain last good rows on failure and accept same-version service changes", async () => {
+  const gate = new OperationGate();
+  let visible: Queue | null = null;
+  let confirmed = false;
+  const h = apiHarness([
+    snapshot,
+    { ...snapshot, estado: "PAUSADO" },
+    { ...snapshot, colaVersion: 1 },
+  ]);
+  async function run(read = () => h.api.queue("sala")) {
+    const ticket = gate.begin();
+    assert.ok(ticket !== null);
+    await refreshQueue({
+      read,
+      gate,
+      commit(update) {
+        if (gate.valid(ticket)) update();
+      },
+      accept(value) {
+        visible = value;
+        confirmed = true;
+      },
+      stale() {
+        confirmed = false;
+      },
+    });
+    gate.end(ticket);
+  }
+  await run();
+  assert.equal(confirmed, true);
+  await run();
+  assert.equal(confirmed, true);
+  const paused = visible;
+  assert.equal((paused as Queue | null)?.estado, "PAUSADO");
+  await run();
+  assert.equal(confirmed, false);
+  assert.equal(visible, paused);
+  await run(async () => {
+    throw Error("offline");
+  });
+  assert.equal(confirmed, false);
+  assert.equal(visible, paused);
+  assert.equal(h.calls.length, 3);
+  assert.ok(h.calls.every((call) => call.options.method === "GET"));
+});
+
+test("disposal fences in-flight queue results and prevents follow-up reads", async () => {
+  const gate = new OperationGate();
+  const ticket = gate.begin();
+  assert.ok(ticket !== null);
+  let resolve: (value: Queue) => void = () => {};
+  let reads = 0;
+  let updates = 0;
+  const options = {
+    gate,
+    read() {
+      reads++;
+      return new Promise<Queue>((done) => {
+        resolve = done;
+      });
+    },
+    commit(update: () => void) {
+      if (gate.valid(ticket)) update();
+    },
+    accept() {
+      updates++;
+    },
+    stale() {
+      updates++;
+    },
+  };
+  const pending = refreshQueue(options);
+  gate.invalidate();
+  resolve({ ...snapshot, estado: "ABIERTO" });
+  await pending;
+  await refreshQueue(options);
+  assert.equal(reads, 1);
+  assert.equal(updates, 0);
+});
+
+test("operational panel preserves explicit next/end controls while prerender performs no writes", () => {
+  let requests = 0;
+  const api = new DemoApi(async () => {
+    requests++;
+    throw Error("unexpected request");
+  });
+  const html = renderToStaticMarkup(
+    createElement(QueuePanel, {
+      api,
+      establishment,
+      session: null,
+      showPlaybackControls: true,
+    }),
+  );
+  // Playback actions are named so nobody confuses them with ending the session.
+  assert.match(html, />Siguiente canción<\/button>/);
+  assert.match(html, />Terminar canción<\/button>/);
+  assert.doesNotMatch(html, />Finalizar<\/button>|Al finalizar/);
+  assert.match(
+    html,
+    /<legend[^>]*>Cómo terminó la canción que suena<\/legend>/,
+  );
+  assert.equal((html.match(/type="radio"/g) ?? []).length, 3);
+  for (const text of ["Completada", "Saltada", "Fallida"])
+    assert.ok(html.includes(text));
+  assert.equal(requests, 0);
+});
+
+test("draft preserves unique ordered 200-song limit, removal and no writes from catalog picks", async () => {
+  let writes = 0;
+  const model = new ListDraft(
+    {
+      async currentList() {
+        return null;
+      },
+      async listHistory() {
+        return [];
+      },
+      async publishList() {
+        writes++;
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  const selected = Array.from({ length: 201 }, (_, i) => ({
+    ...song,
+    canal: "Channel",
+    videoId: String(i).padStart(11, "0"),
+  }));
+  for (const value of selected) model.pick(value);
+  const before = model.getSnapshot();
+  model.pick(selected[0]);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.songs.length, 200);
+  assert.deepEqual(
+    before.songs.map((value) => value.videoId),
+    selected.slice(0, 200).map((value) => value.videoId),
+  );
+  model.remove(selected[0].videoId);
+  model.pick(selected[200]);
+  assert.equal(model.getSnapshot().songs.length, 200);
+  assert.equal(model.getSnapshot().songs[199].videoId, selected[200].videoId);
+  assert.equal(writes, 0);
+  model.dispose();
+});
+
+test("queue reads immediately, serially after completion, and stops on disposal", async () => {
+  let reads = 0;
+  let complete: () => void = () => {};
+  const tasks: (() => void)[] = [];
+  const delays: number[] = [];
+  const clock: RefreshClock = {
+    schedule(task, delay) {
+      tasks.push(task);
+      delays.push(delay);
+      return task;
+    },
+    cancel() {
+      tasks.length = 0;
+    },
+  };
+  const stop = startQueueRefresh(() => {
+    reads++;
+    return new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+  }, clock);
+  assert.equal(reads, 1);
+  assert.equal(tasks.length, 0, "no overlapping read while pending");
+  complete();
+  await settle();
+  assert.deepEqual(delays, [6000]);
+  const next = tasks.pop();
+  assert.ok(next);
+  next();
+  assert.equal(reads, 2);
+  stop();
+  complete();
+  await settle();
+  assert.equal(tasks.length, 0);
+  assert.deepEqual(delays, [6000]);
+  assert.equal(reads, 2);
+});
+
+test("queue song rows show actual current track, votes and wait without diagnostics", () => {
+  const value: Queue = {
+    ...snapshot,
+    estado: "ABIERTO",
+    enReproduccion: {
+      solicitudId: null,
+      cancion: { ...song, titulo: "Current track" },
+      iniciadaAt: establishment.creadoAt,
+      restanteSegundos: 15,
+    },
+  };
+  const html = renderToStaticMarkup(
+    createElement(QueueSongs, { snapshot: value }),
+  );
+  for (const text of ["Tema", "1 voto<", "Sin espera", ">01<", "Artista"])
+    assert.ok(html.includes(text), text);
+  assert.doesNotMatch(html, /1 votos|min aprox/);
+  const playing = renderToStaticMarkup(
+    createElement(NowPlaying, { playing: value.enReproduccion }),
+  );
+  for (const text of ["Current track", "En reproducción", "eq--on"])
+    assert.ok(playing.includes(text), text);
+  assert.doesNotMatch(playing, /2026-|Versión|servidor|backend|<button/);
+  assert.doesNotMatch(html, /2026-|Versión|servidor|backend|<button|<select/);
+});
+
+test("list entry automatically loads current/history and initializes one editable draft without publishing", async () => {
+  const calls: string[] = [];
+  const model = new ListDraft(
+    {
+      async currentList() {
+        calls.push("current");
+        return list as DefaultList;
+      },
+      async listHistory() {
+        calls.push("history");
+        return [];
+      },
+      async publishList() {
+        calls.push("WRITE");
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  assert.deepEqual(calls, ["current", "history"]);
+  assert.equal(model.getSnapshot().songs[0].videoId, song.videoId);
+  assert.equal(model.getSnapshot().name, "General");
+  model.edit({ name: "My changes", rotation: ROTATION.RANDOM });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  model.enter();
+  await settle();
+  assert.equal(model.getSnapshot().songs.length, 2);
+  assert.equal(model.getSnapshot().name, "My changes");
+  assert.equal(model.getSnapshot().rotation, ROTATION.RANDOM);
+  assert.deepEqual(calls, ["current", "history"]);
+  model.dispose();
+});
+
+test("late list initialization preserves edits made while loading and ignores disposed results", async () => {
+  let resolve: (value: DefaultList | null) => void = () => {};
+  let history = 0;
+  const model = new ListDraft(
+    {
+      currentList: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+      async listHistory() {
+        history++;
+        return [];
+      },
+      async publishList() {
+        throw Error("unexpected write");
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  model.edit({ name: "Unsaved" });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  resolve(list as DefaultList);
+  await settle();
+  assert.equal(model.getSnapshot().name, "Unsaved");
+  assert.deepEqual(
+    model.getSnapshot().songs.map((s) => s.videoId),
+    ["lmnopqrstuv"],
+  );
+  const pending = model.refresh();
+  const before = model.getSnapshot();
+  model.dispose();
+  resolve(null);
+  await pending;
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(history, 1, "disposal stops follow-up reads");
+});
+
+test("confirmed save refreshes once; uncertain save never retries and retains draft", async () => {
+  let reads = 0;
+  let writes = 0;
+  let fail = false;
+  const model = new ListDraft(
+    {
+      async currentList() {
+        reads++;
+        return list as DefaultList;
+      },
+      async listHistory() {
+        return [];
+      },
+      async publishList() {
+        writes++;
+        if (fail) throw Error("lost acknowledgement");
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  model.edit({ name: "Keep me" });
+  await Promise.all([model.publish(), model.publish()]);
+  assert.equal(writes, 1);
+  assert.equal(reads, 2);
+  assert.equal(model.getSnapshot().notice, "Lista guardada");
+  assert.equal(model.getSnapshot().name, "Keep me");
+  fail = true;
+  await model.publish();
+  const before = model.getSnapshot();
+  await model.publish();
+  model.enter();
+  await settle();
+  assert.equal(writes, 2);
+  assert.equal(reads, 2);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.uncertain, true);
+  assert.equal(before.name, "Keep me");
+  assert.equal(before.songs.length, 1);
+  await model.refresh();
+  assert.equal(model.getSnapshot().uncertain, false);
+  assert.equal(model.getSnapshot().name, "Keep me");
+  model.dispose();
+});
+
+test("music queue is a concise read-only song view before automatic hydration", () => {
+  let reads = 0;
+  const api = new DemoApi(async () => {
+    reads++;
+    return Response.json({});
+  });
+  const html = renderToStaticMarkup(
+    createElement(QueuePanel, {
+      api,
+      establishment,
+      session: null,
+    }),
+  );
+  assert.match(html, /Cola en vivo/);
+  assert.match(html, /Actualización automática/);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /El local está preparando la música/);
+  assert.doesNotMatch(
+    html,
+    /<button|<select|servidor|backend|Versión|Actualizar cola/,
+  );
+  assert.equal(reads, 0, "prerender never performs requests");
+});
+
+test("owner-only BFF rejects legacy and foreign identifier routes without effects", async () => {
+  const h = harness();
+  for (const path of [
+    "/api/staff/establecimientos",
+    "/api/admin/establecimientos",
+    `/api/mi-establecimiento/${id}`,
+    `/api/mi-establecimiento/sesiones/${id}`,
+    "/api/mi-establecimiento?establecimientoId=foreign",
+  ]) {
+    const response = await proxyRequest(request(path), h);
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { code: "NOT_FOUND" });
+  }
+  for (const body of [
+    { nombre: "Sala", propietarioSub: "foreign" },
+    { nombre: "Sala", establecimientoId: id },
+    { nombre: "Sala", sesionId: id },
+  ]) {
+    const response = await proxyRequest(
+      request("/api/mi-establecimiento", "POST", JSON.stringify(body)),
+      h,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: "INVALID_BODY" });
+  }
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.credentials, 0);
+});
+
+test("session pause/resume and effective public availability are narrowly allowed", async () => {
+  for (const path of [
+    "/api/mi-establecimiento/sesion/pausa",
+    "/api/mi-establecimiento/sesion/reanudacion",
+    "/api/mi-establecimiento/reanudacion",
+    "/api/mi-establecimiento/mantenimiento/fin",
+  ]) {
+    const h = harness();
+    const rejected = await proxyRequest(
+      request(path, "POST", undefined, null),
+      h,
+    );
+    assert.equal(rejected.status, 403);
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.credentials, 0);
+    const response = await proxyRequest(request(path, "POST"), h);
+    assert.equal(response.status, 201);
+    assert.equal(h.calls[0].url, h.apiUrl + path);
+    assert.equal(h.calls[0].init?.body, undefined);
+  }
+  const h = harness();
+  assert.equal(
+    (await proxyRequest(request("/api/public/establecimientos/sala"), h))
+      .status,
+    201,
+  );
+  assert.equal(h.calls.length, 1);
+});
+
+test("public queue accepts maintenance and default-list playback acknowledgments", async () => {
+  const start = {
+    reproduccionId: id,
+    origen: "DEFECTO",
+    solicitudId: null,
+    cancion: song,
+    iniciadaAt: establishment.creadoAt,
+    votos: 0,
+    colaVersion: 3,
+  };
+  const end = {
+    reproduccionId: id,
+    solicitudId: null,
+    resultado: "COMPLETADA",
+    motivoCodigo: null,
+    terminadaAt: establishment.creadoAt,
+    colaVersion: 4,
+  };
+  const h = apiHarness([{ ...snapshot, estado: "MANTENIMIENTO" }, start, end]);
+  assert.equal((await h.api.queue("sala")).estado, "MANTENIMIENTO");
+  assert.deepEqual(await h.api.next(id), start);
+  assert.deepEqual(await h.api.finish(id, "COMPLETADA"), end);
+  assert.equal(h.calls.length, 3);
+});
+
+test("owner session and service controls send no foreign identifiers and preserve rejection", async () => {
+  const session = {
+    id,
+    establecimientoId: id,
+    listaId: id,
+    fechaOperativa: "2026-06-01",
+    estado: "PAUSADA",
+    abiertaAt: establishment.creadoAt,
+    cerradaAt: null,
+  };
+  const h = apiHarness([
+    session,
+    { ...session, estado: "ABIERTA" },
+    establishment,
+    establishment,
+  ]);
+  assert.deepEqual(await h.api.pauseSession(), session);
+  assert.equal((await h.api.resumeSession()).estado, "ABIERTA");
+  assert.deepEqual(await h.api.resumeService(), establishment);
+  assert.deepEqual(await h.api.endMaintenance(), establishment);
+  assert.deepEqual(
+    h.calls.map((call) => [call.url, call.options.method, call.options.body]),
+    [
+      ["/api/bff/api/mi-establecimiento/sesion/pausa", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/sesion/reanudacion", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/reanudacion", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/mantenimiento/fin", "POST", undefined],
+    ],
+  );
+  let calls = 0;
+  const rejected = new DemoApi(async () => {
+    calls++;
+    return Response.json(
+      { code: "SESSION_NOT_PAUSABLE", detail: "private" },
+      { status: 409 },
+    );
+  });
+  await assert.rejects(rejected.pauseSession(), /Solo se puede pausar/);
+  assert.equal(calls, 1);
+});
+
+test("public effective availability distinguishes service states and optional next opening without credentials", async () => {
+  for (const servicio of ["ABIERTO", "PAUSADO", "CERRADO", "MANTENIMIENTO"]) {
+    const value = {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio,
+      puedeParticipar: servicio === "ABIERTO",
+      proximaApertura: "2026-06-02T00:00:00Z",
+    };
+    const h = apiHarness([value]);
+    assert.deepEqual(await h.api.availability("sala"), value);
+    assert.equal(h.calls[0].url, "/api/bff/api/public/establecimientos/sala");
+    assert.equal(
+      new Headers(h.calls[0].options.headers).has("Authorization"),
+      false,
+    );
+  }
+  const h = apiHarness([
+    {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio: "ABIERTA",
+      puedeParticipar: true,
+    },
+    {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio: "ABIERTO",
+      puedeParticipar: true,
+      token: "synthetic-only",
+    },
+  ]);
+  await assert.rejects(h.api.availability("sala"), /respuesta/);
+  await assert.rejects(h.api.availability("sala"), /respuesta/);
+  await assert.rejects(h.api.availability("Bad"));
+  assert.equal(h.calls.length, 2);
+});
+
+test("only exact NO_ESTABLISHMENT 404 enables onboarding", async () => {
+  for (const [status, code] of [
+    [404, "ESTABLISHMENT_NOT_FOUND"],
+    [500, "NO_ESTABLISHMENT"],
+    [401, "NO_ESTABLISHMENT"],
+  ] as const) {
+    let calls = 0;
+    const api = new DemoApi(async () => {
+      calls++;
+      return Response.json({ code }, { status });
+    });
+    await assert.rejects(api.establishments());
+    assert.equal(calls, 1);
+  }
+  const api = new DemoApi(async () =>
+    Response.json({ code: "NO_ESTABLISHMENT" }, { status: 404 }),
+  );
+  assert.deepEqual(await api.establishments(), []);
+});
 
 test("operation gate rejects duplicate clicks, late selection/unmount results and older snapshots", () => {
   const gate = new OperationGate();
@@ -48,6 +733,8 @@ const establishment = {
   qrSlug: "sala",
   zonaHoraria: "America/Bogota",
   activo: true,
+  pausado: false,
+  enMantenimiento: false,
   creadoAt: "2026-06-01T00:00:00Z",
 };
 const list = {
@@ -85,16 +772,16 @@ const snapshot = {
   ],
 };
 const writes = [
-  ["POST", "/api/admin/establecimientos", { nombre: "Sala" }],
-  ["PATCH", `/api/admin/establecimientos/${id}`, { activo: false }],
+  ["POST", "/api/mi-establecimiento", { nombre: "Sala" }],
+  ["PATCH", "/api/mi-establecimiento", { activo: false }],
   [
     "PUT",
-    `/api/admin/establecimientos/${id}/lista-defecto`,
+    "/api/mi-establecimiento/lista-defecto",
     { canciones: [song.videoId], politicaRotacion: "ALEATORIA" },
   ],
   [
     "POST",
-    `/api/staff/sesiones/${id}/reproduccion/fin`,
+    "/api/mi-establecimiento/reproduccion/fin",
     { resultado: "COMPLETADA" },
   ],
 ] as const;
@@ -271,9 +958,9 @@ test("BFF rejects non-JSON content before upstream effects", async () => {
   assert.equal(h.credentials, 0);
 });
 const reads = [
-  `/api/staff/establecimientos/${id}/lista-defecto`,
-  `/api/admin/establecimientos/${id}/listas-defecto`,
-  "/api/staff/catalogo/sugerencias?q=ro",
+  "/api/mi-establecimiento/lista-defecto",
+  "/api/mi-establecimiento/listas-defecto",
+  "/api/mi-establecimiento/catalogo/sugerencias?q=ro",
   "/api/public/establecimientos/sala/cola",
 ];
 test("BFF narrowly allows list/history/suggestions/public queue through authenticated transport", async () => {
@@ -307,7 +994,7 @@ test("BFF narrowly allows list/history/suggestions/public queue through authenti
     `?q=${"x".repeat(101)}`,
   ]) {
     const response = await proxyRequest(
-      request(`/api/staff/catalogo/sugerencias${query}`),
+      request(`/api/mi-establecimiento/catalogo/sugerencias${query}`),
       h,
     );
     assert.equal(response.status, 400);
@@ -317,7 +1004,7 @@ test("BFF narrowly allows list/history/suggestions/public queue through authenti
 });
 test("BFF next is bodyless, Origin-protected and forwards exact path", async () => {
   const h = harness();
-  const path = `/api/staff/sesiones/${id}/reproduccion/siguiente`;
+  const path = "/api/mi-establecimiento/reproduccion/siguiente";
   assert.equal(
     (await proxyRequest(request(path, "POST", undefined, null), h)).status,
     403,
@@ -326,14 +1013,14 @@ test("BFF next is bodyless, Origin-protected and forwards exact path", async () 
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].init?.body, undefined);
 });
-test("BFF preserves all six existing bodyless route contracts and catalog pagination", async () => {
+test("BFF migrates six bodyless contracts and preserves catalog pagination", async () => {
   const existing = [
-    ["GET", "/api/staff/establecimientos"],
-    ["GET", `/api/staff/establecimientos/${id}/sesion-actual`],
-    ["GET", `/api/admin/establecimientos/${id}/qr`],
-    ["GET", "/api/staff/catalogo/busqueda?q=rock&pagina=next="],
-    ["POST", `/api/admin/establecimientos/${id}/sesiones`],
-    ["POST", `/api/admin/sesiones/${id}/cierre`],
+    ["GET", "/api/mi-establecimiento"],
+    ["GET", "/api/mi-establecimiento/sesion-actual"],
+    ["GET", "/api/mi-establecimiento/qr"],
+    ["GET", "/api/mi-establecimiento/catalogo/busqueda?q=rock&pagina=next="],
+    ["POST", "/api/mi-establecimiento/sesiones"],
+    ["POST", "/api/mi-establecimiento/sesion/cierre"],
   ];
   for (const [method, path] of existing) {
     const h = harness();
@@ -388,7 +1075,7 @@ test("new BFF contracts preserve error status/code without upstream diagnostics"
         { status },
       );
     const response = await proxyRequest(
-      request(`/api/staff/sesiones/${id}/reproduccion/siguiente`, "POST"),
+      request("/api/mi-establecimiento/reproduccion/siguiente", "POST"),
       h,
     );
     assert.equal(response.status, status);
@@ -436,8 +1123,8 @@ test("Demo API creates and edits establishments with exact DTO and request bodie
       JSON.parse(String(c.options.body)),
     ]),
     [
-      ["/api/bff/api/admin/establecimientos", "POST", { nombre: "Sala" }],
-      [`/api/bff/api/admin/establecimientos/${id}`, "PATCH", { activo: true }],
+      ["/api/bff/api/mi-establecimiento", "POST", { nombre: "Sala" }],
+      ["/api/bff/api/mi-establecimiento", "PATCH", { activo: true }],
     ],
   );
 });
@@ -473,7 +1160,10 @@ test("Demo API distinguishes suggestion strings from songs and public queue from
   const h = apiHarness([suggestions, snapshot]);
   assert.deepEqual(await h.api.suggestions(" ro "), suggestions);
   assert.deepEqual(await h.api.queue("sala"), snapshot);
-  assert.equal(h.calls[0].url, "/api/bff/api/staff/catalogo/sugerencias?q=ro");
+  assert.equal(
+    h.calls[0].url,
+    "/api/bff/api/mi-establecimiento/catalogo/sugerencias?q=ro",
+  );
   assert.equal(
     h.calls[1].url,
     "/api/bff/api/public/establecimientos/sala/cola",
@@ -483,6 +1173,7 @@ test("Demo API distinguishes suggestion strings from songs and public queue from
 test("Demo API next and finish use queue-song DTO without canal and acknowledge server version", async () => {
   const start = {
     reproduccionId: id,
+    origen: "SOLICITUD",
     solicitudId: id,
     cancion: song,
     iniciadaAt: establishment.creadoAt,
@@ -493,6 +1184,7 @@ test("Demo API next and finish use queue-song DTO without canal and acknowledge 
     reproduccionId: id,
     solicitudId: id,
     resultado: "SALTADA",
+    motivoCodigo: "SALTO_MANUAL",
     terminadaAt: establishment.creadoAt,
     colaVersion: 4,
   };
@@ -502,7 +1194,7 @@ test("Demo API next and finish use queue-song DTO without canal and acknowledge 
   assert.equal(h.calls[0].options.body, undefined);
   assert.equal(
     h.calls[0].url,
-    `/api/bff/api/staff/sesiones/${id}/reproduccion/siguiente`,
+    "/api/bff/api/mi-establecimiento/reproduccion/siguiente",
   );
   assert.deepEqual(JSON.parse(String(h.calls[1].options.body)), {
     resultado: "SALTADA",
@@ -579,3 +1271,47 @@ test("Demo API reports conflict, permission, invalid and uncertain results witho
   await assert.rejects(offline.next(id), /incierto/);
   assert.equal(calls, 1);
 });
+
+test("owner search rejects duplicate pagination before credentials or effects", async () => {
+  const h = harness();
+  const response = await proxyRequest(
+    request("/api/mi-establecimiento/catalogo/busqueda?q=ro&pagina=a&pagina=b"),
+    h,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { code: "INVALID_QUERY" });
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(h.credentials, 0);
+  assert.equal(h.calls.length, 0);
+});
+
+test(
+  "owner JSON read deadline cancels stalled input without effects",
+  { timeout: 8000 },
+  async () => {
+    const h = harness();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await proxyRequest(
+      new Request(`${app}/api/bff/api/mi-establecimiento`, {
+        method: "POST",
+        headers: { Origin: app, "Content-Type": "application/json" },
+        body,
+        duplex: "half",
+      } as RequestInit),
+      h,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: "INVALID_BODY" });
+    assert.equal(cancelled, true);
+    assert.equal(h.credentials, 0);
+    assert.equal(h.calls.length, 0);
+  },
+);

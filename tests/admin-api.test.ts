@@ -55,12 +55,12 @@ test("default browser transport invokes fetch with its global receiver", async (
   ) {
     if (this !== globalThis) throw new TypeError("Illegal invocation");
     calls.push({ url: String(input), options });
-    return json([]);
+    return json({ code: "NO_ESTABLISHMENT" }, 404);
   };
   try {
     assert.deepEqual(await new AdminApi().establishments(), []);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "/api/bff/api/staff/establecimientos");
+    assert.equal(calls[0].url, "/api/bff/api/mi-establecimiento");
     assert.equal(calls[0].options?.method, "GET");
     assert.equal(calls[0].options?.credentials, "same-origin");
     assert.equal(calls[0].options?.redirect, "error");
@@ -76,9 +76,9 @@ test("default browser transport invokes fetch with its global receiver", async (
 });
 
 test("browser transport uses same-origin BFF and never sends credentials in headers", async () => {
-  const { api, calls } = harness([json([])]);
+  const { api, calls } = harness([json({ code: "NO_ESTABLISHMENT" }, 404)]);
   await api.establishments();
-  assert.equal(calls[0].url, "/api/bff/api/staff/establecimientos");
+  assert.equal(calls[0].url, "/api/bff/api/mi-establecimiento");
   assert.equal(
     new Headers(calls[0].options?.headers).get("Authorization"),
     null,
@@ -94,12 +94,14 @@ test("reads staff establishments with same-origin cookies and no redirects", asy
       qrSlug: "sala",
       zonaHoraria: "America/Bogota",
       activo: true,
+      pausado: false,
+      enMantenimiento: false,
       creadoAt: "2026-01-01T00:00:00Z",
     },
   ];
-  const { api, calls } = harness([json(items)]);
+  const { api, calls } = harness([json(items[0])]);
   assert.deepEqual(await api.establishments(), items);
-  assert.equal(calls[0].url, "/api/bff/api/staff/establecimientos");
+  assert.equal(calls[0].url, "/api/bff/api/mi-establecimiento");
   assert.equal(
     new Headers(calls[0].options?.headers).get("Authorization"),
     null,
@@ -136,9 +138,9 @@ test("opens, closes and loads QR using exact backend contracts", async () => {
   assert.deepEqual(
     calls.map((c) => [c.url, c.options?.method]),
     [
-      [`/api/bff/api/admin/establecimientos/${establishment}/sesiones`, "POST"],
-      [`/api/bff/api/admin/sesiones/${establishment}/cierre`, "POST"],
-      [`/api/bff/api/admin/establecimientos/${establishment}/qr`, "GET"],
+      ["/api/bff/api/mi-establecimiento/sesiones", "POST"],
+      ["/api/bff/api/mi-establecimiento/sesion/cierre", "POST"],
+      ["/api/bff/api/mi-establecimiento/qr", "GET"],
     ],
   );
   assert.ok(calls.every((c) => c.options?.body === undefined));
@@ -169,7 +171,10 @@ test("searches normalized queries with encoded pagination and rejects invalid in
   const { api, calls } = harness([json(page)]);
   assert.deepEqual(await api.search("  rock   & pop ", "next="), page);
   const url = new URL(calls[0].url, "http://localhost:3000");
-  assert.equal(url.pathname, "/api/bff/api/staff/catalogo/busqueda");
+  assert.equal(
+    url.pathname,
+    "/api/bff/api/mi-establecimiento/catalogo/busqueda",
+  );
   assert.equal(url.searchParams.get("q"), "rock & pop");
   assert.equal(url.searchParams.get("pagina"), "next=");
   for (const query of ["a", "x".repeat(101)])

@@ -1,100 +1,121 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { login, logout } from "@/app/actions";
-import type { Establishment, Qr, SearchPage, Session } from "@/lib/admin-api";
+import type { Establishment, Qr, Session } from "@/lib/admin-api";
 import { DemoApi } from "@/lib/demo-api";
-import { EstablishmentForm } from "./demo/establishment-form";
-import { ListConfiguration } from "./demo/list-configuration";
-import { QueuePanel } from "./demo/queue-panel";
+import { nightLabel, plural } from "@/lib/format";
+import {
+  OWNER_VIEW_SUBTITLE,
+  ownerError,
+  sessionNotice,
+  OWNER_VIEWS as VIEW,
+} from "@/lib/owner-copy";
+import { timeZoneLabel } from "@/lib/time-zones";
+import {
+  ArrowRightIcon,
+  BrandMark,
+  CheckIcon,
+  CloseIcon,
+  HeadphonesIcon,
+  LogoutIcon,
+  PauseIcon,
+  PlayIcon,
+  RefreshIcon,
+  StopIcon,
+  WrenchIcon,
+} from "./icons";
+import { ConfirmDialog } from "./owner/confirm-dialog";
+import { EstablishmentForm } from "./owner/establishment-form";
+import { ErrorCallout, Loading } from "./owner/feedback";
+import { ListConfiguration } from "./owner/list-configuration";
+import { OwnerNavigation } from "./owner/navigation";
+import { QrCard } from "./owner/qr-card";
+import { QueuePanel } from "./owner/queue-panel";
+import { ThemeControls } from "./owner/theme-controls";
+import { ToastProvider, useNotify } from "./owner/toast";
 
-const VIEW = {
-  PANEL: "Panel operativo",
-  SESSION: "Sesión y QR",
-  QUEUE: "Cola musical",
-  CATALOG: "Catálogo",
-  SETUP: "Configuración y listas",
-} as const;
 type View = (typeof VIEW)[keyof typeof VIEW];
-const message = (error: unknown) =>
-  error instanceof Error ? error.message : "No se pudo completar la operación.";
-
-function QrCard({ qr }: { qr: Qr }) {
-  const [source, setSource] = useState("");
-  useEffect(() => {
-    const url = URL.createObjectURL(
-      new Blob([qr.svg], { type: "image/svg+xml" }),
-    );
-    setSource(url);
-    return () => URL.revokeObjectURL(url);
-  }, [qr]);
-  return (
-    <>
-      {source && (
-        <>
-          {/* SVG is isolated in image context, never inserted as HTML. */}
-          {/* biome-ignore lint/performance/noImgElement: API SVG blob must not use the image optimizer. */}
-          <img
-            className="qr"
-            src={source}
-            alt="Código QR de acceso al establecimiento"
-            width={220}
-            height={220}
-            referrerPolicy="no-referrer"
-          />
-          <a className="button" href={source} download="yousong-acceso.svg">
-            Descargar QR (SVG)
-          </a>
-        </>
-      )}
-      <p className="break">{qr.url}</p>
-      <p>
-        El QR identifica al establecimiento. La participación requiere una
-        sesión en operación.
-      </p>
-    </>
-  );
-}
+const OWNER_CONTROL = {
+  PAUSE: "pause",
+  RESUME: "resume",
+  SERVICE: "service",
+  MAINTENANCE: "maintenance",
+} as const;
+type OwnerControl = (typeof OWNER_CONTROL)[keyof typeof OWNER_CONTROL];
+const message = ownerError;
+const READY = "Tu público ya puede unirse con el QR.";
+const NOT_READY =
+  "Ahora nadie puede unirse: revisa la sesión y el horario del local.";
+const CHECKING = "Comprobando si tu público puede unirse…";
 
 export function AdminPanel(props: { authenticated: boolean; roles: string[] }) {
   return (
-    <AdminPanelContent
-      key={`${props.authenticated}:${props.roles.join(",")}`}
-      {...props}
-    />
+    <ToastProvider>
+      <AdminPanelContent
+        key={`${props.authenticated}:${props.roles.join(",")}`}
+        {...props}
+      />
+    </ToastProvider>
+  );
+}
+
+function StatusChip({ session }: { session: Session | null }) {
+  const tone =
+    session?.estado === "ABIERTA"
+      ? "chip--live"
+      : session?.estado === "PAUSADA"
+        ? "chip--paused"
+        : "chip--off";
+  return (
+    <span className={`chip chip--compact ${tone}`}>
+      <span className="chip__text">
+        {session ? sessionNotice(session.estado) : "Sin sesión"}
+      </span>
+    </span>
   );
 }
 
 function AdminPanelContent({
   authenticated,
-  roles,
 }: {
   authenticated: boolean;
   roles: string[];
 }) {
-  const isAdmin = roles.includes("ADMINISTRADOR");
+  // Any authenticated account may operate its own establishment. Roles are
+  // display hints only; backend JWT-sub ownership is the authorization.
+  const ownerAccess = authenticated;
+  const notify = useNotify();
   const [api, setApi] = useState<DemoApi | null>(null);
   const [items, setItems] = useState<Establishment[]>([]);
   const [selected, setSelected] = useState<Establishment | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [readiness, setReadiness] = useState(CHECKING);
+  const [hasList, setHasList] = useState<boolean | null>(null);
   const [qr, setQr] = useState<Qr | null>(null);
   const [qrError, setQrError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [closing, setClosing] = useState(false);
   const [view, setView] = useState<View>(VIEW.PANEL);
-  const [results, setResults] = useState<SearchPage | null>(null);
-  const [query, setQuery] = useState("");
-  const [searchedQuery, setSearchedQuery] = useState("");
   const generation = useRef(0);
   const pending = useRef(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(
     () => () => {
       generation.current++;
+      pending.current = false;
     },
     [],
   );
+  const say = (text: string) => notify?.(text);
+  function go(next: View) {
+    setView(next);
+    mainRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
+  }
 
   function saved(establishment: Establishment) {
     setItems((previous) =>
@@ -113,11 +134,29 @@ function AdminPanelContent({
     setSession(null);
     setQr(null);
     setLoaded(false);
+    setHasList(null);
+    setReadiness(CHECKING);
     setError("");
     setQrError("");
-    setNotice("");
     setBusy(true);
     await Promise.all([
+      client
+        .currentList(establishment.id)
+        .then((list) => {
+          if (version === generation.current) setHasList(list !== null);
+        })
+        .catch((e) => {
+          if (version === generation.current) setError(message(e));
+        }),
+      client
+        .availability(establishment.qrSlug)
+        .then((value) => {
+          if (version === generation.current)
+            setReadiness(value.puedeParticipar ? READY : NOT_READY);
+        })
+        .catch((e) => {
+          if (version === generation.current) setReadiness(message(e));
+        }),
       client
         .currentSession(establishment.id)
         .then((value) => {
@@ -129,7 +168,7 @@ function AdminPanelContent({
         .catch((e) => {
           if (version === generation.current) setError(message(e));
         }),
-      (isAdmin ? client.qr(establishment.id) : Promise.resolve(null))
+      (ownerAccess ? client.qr(establishment.id) : Promise.resolve(null))
         .then((value) => {
           if (version === generation.current) setQr(value);
         })
@@ -148,6 +187,7 @@ function AdminPanelContent({
     setError("");
     setBusy(true);
     const version = ++generation.current;
+    setLoaded(false);
     try {
       const client = new DemoApi();
       const establishments = await client.establishments();
@@ -156,6 +196,11 @@ function AdminPanelContent({
       setItems(establishments);
       if (establishments[0]) await load(client, establishments[0]);
       else {
+        setSelected(null);
+        setSession(null);
+        setQr(null);
+        setLoaded(false);
+        setHasList(null);
         setBusy(false);
         pending.current = false;
       }
@@ -167,38 +212,50 @@ function AdminPanelContent({
       }
     }
   }
+  const connectOnEntry = useEffectEvent(() => {
+    void connect();
+  });
+  useEffect(() => {
+    if (authenticated) connectOnEntry();
+  }, [authenticated]);
+
+  // Opening needs no confirmation; closing is confirmed in a modal dialog.
   async function mutate() {
     if (!api || !selected || !loaded || pending.current) return;
-    if (
-      session &&
-      !window.confirm(
-        "¿Finalizar la sesión? Se revocará el acceso de participantes y se finalizarán las solicitudes pendientes.",
-      )
-    )
-      return;
     const version = generation.current;
     pending.current = true;
     setBusy(true);
     setError("");
-    setNotice("");
+    setReadiness("Comprobando de nuevo…");
+    setLoaded(false);
     try {
       if (session) {
         const result = await api.closeSession(session.id);
         if (version !== generation.current) return;
         setSession(null);
-        setNotice(
-          `Sesión finalizada. Solicitudes sin atender al cierre: ${result.pendientesAlCierre}.`,
+        setClosing(false);
+        // The button that opened the dialog disappears with the session, so
+        // the dialog cannot restore focus to it; move focus to the heading
+        // after React has closed the dialog (next frame).
+        requestAnimationFrame(() => headingRef.current?.focus());
+        say(
+          result.pendientesAlCierre
+            ? `Sesión finalizada. Quedaron ${plural(result.pendientesAlCierre, "solicitud", "solicitudes")} sin sonar.`
+            : "Sesión finalizada. No quedaron solicitudes pendientes.",
         );
       } else {
         const result = await api.openSession(selected.id);
         if (version !== generation.current) return;
         setSession(result);
-        setNotice("Sesión abierta en el backend.");
+        say("Sesión abierta. Ya puedes compartir el QR.");
       }
+      setLoaded(true);
+      await refreshAvailability(api, selected, version);
     } catch (e) {
       if (version === generation.current) {
         setError(message(e));
         setLoaded(false);
+        setClosing(false);
       }
     } finally {
       if (version === generation.current) {
@@ -207,23 +264,63 @@ function AdminPanelContent({
       }
     }
   }
-  async function search(event?: FormEvent, page?: string) {
-    event?.preventDefault();
-    if (!api || pending.current) return;
-    pending.current = true;
+  async function refreshAvailability(
+    client: DemoApi,
+    establishment: Establishment,
+    version: number,
+  ) {
+    try {
+      const value = await client.availability(establishment.qrSlug);
+      if (version === generation.current)
+        setReadiness(value.puedeParticipar ? READY : NOT_READY);
+    } catch {
+      if (version === generation.current)
+        setReadiness(
+          "No pudimos comprobar si tu público puede unirse. Actualiza el estado.",
+        );
+    }
+  }
+  async function control(action: OwnerControl) {
+    if (!api || !selected || !loaded || pending.current) return;
     const version = generation.current;
-    const text = page ? searchedQuery : query;
+    pending.current = true;
     setBusy(true);
     setError("");
-    setResults(null);
+    setLoaded(false);
     try {
-      const value = await api.search(text, page);
-      if (version === generation.current) {
-        setResults(value);
-        setSearchedQuery(text);
+      if (action === "pause" || action === "resume") {
+        const value =
+          action === "pause"
+            ? await api.pauseSession()
+            : await api.resumeSession();
+        if (version !== generation.current) return;
+        setSession(value);
+        say(
+          action === "pause"
+            ? "Pausa activada. Nadie puede pedir ni votar."
+            : "Solicitudes y votos reanudados",
+        );
+      } else {
+        const value =
+          action === "service"
+            ? await api.resumeService()
+            : await api.endMaintenance();
+        if (version !== generation.current) return;
+        setSelected(value);
+        say(
+          action === "service"
+            ? "Servicio del local reanudado"
+            : "Mantenimiento terminado",
+        );
       }
+      setLoaded(true);
+      await refreshAvailability(api, selected, version);
     } catch (e) {
-      if (version === generation.current) setError(message(e));
+      if (version === generation.current) {
+        setError(message(e));
+        setLoaded(false);
+        setReadiness("Resultado sin confirmar. Actualiza antes de repetir.");
+      }
     } finally {
       if (version === generation.current) {
         setBusy(false);
@@ -232,318 +329,428 @@ function AdminPanelContent({
     }
   }
 
+  const connected = Boolean(api && selected);
+  const canOpen =
+    !!selected &&
+    loaded &&
+    !busy &&
+    selected.activo &&
+    !selected.pausado &&
+    !selected.enMantenimiento &&
+    !!hasList;
+
   return (
-    <div className="shell">
+    <div className={`app${connected ? "" : " app--bare"}`}>
       <a className="skip" href="#main">
         Saltar al contenido
       </a>
       <header className="topbar">
-        <a className="brand" href="/" aria-label="YouSong inicio">
-          Y<span>YouSong</span>
+        <a className="topbar__brand" href="/" aria-label="YouSong, inicio">
+          <BrandMark size={30} />
         </a>
-        <span className="top-label">Administración · Música para tu local</span>
-        <span className="badge">{api ? "API conectada" : "Sin conexión"}</span>
-        {authenticated && (
-          <form action={logout}>
-            <button type="submit">Cerrar sesión</button>
-          </form>
-        )}
-      </header>
-      <aside className="sidebar">
-        <p className="eyebrow">Operación del local</p>
-        <nav aria-label="Administración">
-          {Object.values(VIEW).map((name) => (
-            <button
-              key={name}
-              type="button"
-              aria-current={view === name ? "page" : undefined}
-              onClick={() => setView(name)}
-            >
-              {name}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-note">
-          Una sala.
-          <br />
-          Muchas canciones.<p>Datos reales, sin simulación.</p>
-        </div>
-      </aside>
-      <main id="main" tabIndex={-1}>
-        <div className="heading">
-          <div>
-            <p className="eyebrow">YouSong / Operación</p>
-            <h1>{view}</h1>
-            <p>Gestiona la sesión de tu establecimiento.</p>
-          </div>
-          <span className="badge">
-            {busy ? "Cargando…" : (selected?.nombre ?? "Conexión de personal")}
+        {selected && (
+          <span className="venue">
+            <span className="venue__icon hide-xs">
+              <HeadphonesIcon size={18} />
+            </span>
+            <span className="venue__name">{selected.nombre}</span>
           </span>
-        </div>
-        {error && (
-          <p id="operation-error" className="alert" role="alert">
-            {error}
-          </p>
         )}
-        <output className="status" aria-live="polite">
-          {busy ? (
-            <p>Cargando datos de la API…</p>
-          ) : (
-            notice && <p className="notice">{notice}</p>
+        <span className="topbar__spacer" />
+        <div className="topbar__actions">
+          {selected && <StatusChip session={loaded ? session : null} />}
+          <ThemeControls />
+          {authenticated && (
+            <form action={logout}>
+              <button
+                type="submit"
+                className="btn btn--ghost btn--icon"
+                aria-label="Salir de la cuenta"
+                title="Salir de la cuenta"
+              >
+                <LogoutIcon size={22} />
+              </button>
+            </form>
           )}
-        </output>
-        {!api ? (
-          <section className="card connection">
-            <p className="eyebrow">Acceso de personal</p>
-            <h2>
-              {authenticated ? "Sesión de personal iniciada" : "Iniciar sesión"}
-            </h2>
-            <p>
-              Accede de forma segura con FusionAuth. Las credenciales de la API
-              se gestionan únicamente en el servidor.
+        </div>
+      </header>
+      {connected && (
+        <aside className="sidebar">
+          <p className="sidebar__label" id="nav-label">
+            Operación del local
+          </p>
+          <OwnerNavigation view={view} onNavigate={go} />
+          <div className="sidebar__footer">
+            <p className="sidebar__motto">
+              Una sala.
+              <br />
+              Muchas canciones.
             </p>
-            {authenticated ? (
-              <button
-                className="primary"
-                type="button"
-                disabled={busy}
-                onClick={() => void connect()}
+            {qr && (
+              <a
+                className="text-link"
+                href={qr.url}
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                {busy ? "Conectando…" : "Cargar establecimiento"}
-              </button>
-            ) : (
-              <form action={login}>
-                <button className="primary" type="submit">
-                  Iniciar sesión con FusionAuth
-                </button>
-              </form>
+                Vista de cliente
+                <ArrowRightIcon size={18} />
+                <span className="sr-only">(se abre en otra pestaña)</span>
+              </a>
             )}
-          </section>
-        ) : (
-          <>
-            <section className="selector card">
-              <label htmlFor="establishment">Establecimiento</label>
-              <select
-                id="establishment"
-                value={selected?.id ?? ""}
-                disabled={busy || items.length === 0}
-                onChange={(event) => {
-                  const item = items.find((e) => e.id === event.target.value);
-                  if (item) void load(api, item);
-                }}
-              >
-                {!items.length && (
-                  <option value="">Sin establecimientos</option>
-                )}
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre}
-                    {!item.activo ? " · Inactivo" : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={busy || !selected}
-                onClick={() => selected && void load(api, selected)}
-              >
-                Actualizar estado
-              </button>
-            </section>
-            {!items.length && (
-              <section className="card">
-                <h2>Sin establecimientos</h2>
-                <p>
-                  La API no devolvió establecimientos.{" "}
-                  {isAdmin
-                    ? "Puedes crear el primero a continuación."
-                    : "Solicita su configuración a un administrador."}
+          </div>
+        </aside>
+      )}
+      <main
+        id="main"
+        ref={mainRef}
+        className="main"
+        tabIndex={-1}
+        aria-busy={busy}
+      >
+        <div className="content">
+          {connected && (
+            <div className="page-head">
+              <div>
+                <h1 ref={headingRef} className="page-head__title" tabIndex={-1}>
+                  {view}
+                </h1>
+                <p className="page-head__subtitle">
+                  {OWNER_VIEW_SUBTITLE[view]}
                 </p>
+              </div>
+              {(busy || view === VIEW.PANEL || view === VIEW.SESSION) && (
+                <div className="page-head__actions">
+                  {busy && <Loading />}
+                  {(view === VIEW.PANEL || view === VIEW.SESSION) && (
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy}
+                      onClick={() => void connect()}
+                    >
+                      <RefreshIcon size={18} />
+                      Actualizar estado
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {error && (
+            <ErrorCallout
+              error={error}
+              action={
+                api && (
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy}
+                      onClick={() => void connect()}
+                    >
+                      Actualizar estado
+                    </button>
+                  </div>
+                )
+              }
+            />
+          )}
+          {!api ? (
+            <section className="card signin" aria-labelledby="signin-title">
+              <BrandMark size={44} className="signin__mark" />
+              <h1 id="signin-title" className="signin__title">
+                {authenticated ? "Preparando tu local" : "Entra a tu panel"}
+              </h1>
+              <p className="card__text">
+                {authenticated
+                  ? busy
+                    ? "Cargando tu local, la sesión y el QR…"
+                    : "No pudimos cargar tu local. Revisa la conexión y vuelve a intentarlo."
+                  : "Abre la sesión de la noche, comparte el QR y controla la cola que vota tu público."}
+              </p>
+              {authenticated ? (
+                <button
+                  className="btn btn--primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void connect()}
+                >
+                  {busy ? "Conectando…" : "Reintentar conexión"}
+                </button>
+              ) : (
+                <form action={login}>
+                  <button className="btn btn--primary" type="submit">
+                    Entrar con tu cuenta
+                  </button>
+                </form>
+              )}
+            </section>
+          ) : !items.length ? (
+            ownerAccess && (
+              <section className="card card--narrow">
+                <EstablishmentForm
+                  key={`create:${selected?.id ?? "empty"}`}
+                  api={api}
+                  onSaved={saved}
+                />
               </section>
-            )}
-            {isAdmin && (!items.length || view === VIEW.SETUP) && (
-              <EstablishmentForm
-                key={`create:${selected?.id ?? "empty"}`}
-                api={api}
-                onSaved={saved}
-              />
-            )}
-            {selected && (
+            )
+          ) : (
+            selected && (
               <>
-                {view === VIEW.SETUP && (
-                  <>
-                    {isAdmin && (
+                <ListConfiguration
+                  key={`list:${selected.id}`}
+                  api={api}
+                  establishmentId={selected.id}
+                  canManage={ownerAccess}
+                  active={view === VIEW.SETUP}
+                  onAvailabilityChange={setHasList}
+                />
+                {view === VIEW.SETUP && ownerAccess && (
+                  <details className="card disclosure card--disclosure">
+                    <summary className="disclosure__summary">
+                      Datos del local
+                    </summary>
+                    <div className="disclosure__body">
                       <EstablishmentForm
                         key={selected.id}
                         api={api}
                         current={selected}
                         onSaved={saved}
                       />
-                    )}
-                    <ListConfiguration
-                      key={`list:${selected.id}`}
-                      api={api}
-                      establishmentId={selected.id}
-                      isAdmin={isAdmin}
-                    />
-                  </>
+                    </div>
+                  </details>
                 )}
-                {(view === VIEW.PANEL || view === VIEW.SESSION) && (
-                  <div className="session-grid">
-                    <section className="card">
-                      <p className="eyebrow">Acceso para participantes</p>
-                      <h2>QR del establecimiento</h2>
-                      {qr ? (
-                        <QrCard qr={qr} />
-                      ) : (
-                        <p>
-                          {!isAdmin
-                            ? "El QR requiere el rol ADMINISTRADOR."
-                            : qrError ||
-                              (busy ? "Cargando QR…" : "QR no disponible.")}
-                        </p>
-                      )}
+                {view === VIEW.PANEL && loaded && !session && (
+                  <div className="callout">
+                    <PlayIcon size={20} />
+                    <div className="callout__body">
+                      <p className="callout__title">La sesión está cerrada</p>
                       <p className="muted">
-                        Consultar y descargar el QR requiere ADMINISTRADOR.
+                        Ábrela para que tu público pueda unirse con el QR y
+                        pedir canciones.
                       </p>
-                    </section>
-                    <section className="card">
-                      <p className="eyebrow">Control del local</p>
-                      <h2>Sesión actual</h2>
-                      {!loaded ? (
-                        <p>Estado sin confirmar. Actualiza antes de operar.</p>
-                      ) : session ? (
-                        <>
-                          <span className="badge">{session.estado}</span>
-                          <dl>
-                            <dt>Fecha operativa</dt>
-                            <dd>{session.fechaOperativa}</dd>
-                            <dt>Apertura</dt>
-                            <dd>
-                              {new Date(session.abiertaAt).toLocaleString(
-                                "es",
-                                { timeZone: selected.zonaHoraria },
-                              )}
-                            </dd>
-                            <dt>Zona horaria</dt>
-                            <dd>{selected.zonaHoraria}</dd>
-                          </dl>
-                        </>
-                      ) : (
-                        <p>No hay una sesión en operación.</p>
-                      )}
-                      {isAdmin && (
+                      <div>
                         <button
                           type="button"
-                          className={session ? "danger" : "primary"}
-                          disabled={
-                            busy || !loaded || (!selected.activo && !session)
-                          }
-                          onClick={() => void mutate()}
+                          className="btn btn--small"
+                          onClick={() => go(VIEW.SESSION)}
                         >
-                          {session ? "Finalizar sesión" : "Abrir sesión"}
+                          Ir a Sesión y QR
                         </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {view === VIEW.SESSION && (
+                  <div className="grid-session">
+                    <section className="card" aria-labelledby="qr-title">
+                      <h2
+                        id="qr-title"
+                        className="card__title card__title--center"
+                      >
+                        Acceso para participantes
+                      </h2>
+                      {qr ? (
+                        <QrCard qr={qr} />
+                      ) : qrError ? (
+                        <ErrorCallout error={qrError} />
+                      ) : (
+                        <Loading
+                          label={busy ? "Cargando QR…" : "QR no disponible."}
+                        />
                       )}
-                      <p>
-                        Operación exclusiva de ADMINISTRADOR. Abrir requiere un
-                        local activo y una lista predeterminada configurada.
-                      </p>
-                      <hr />
-                      <p>
-                        Pausar solicitudes, mantenimiento y programación
-                        automática: no disponibles en la API actual.
-                      </p>
+                    </section>
+                    <section
+                      className="card stack"
+                      aria-labelledby="controls-title"
+                    >
+                      <h2 id="controls-title" className="card__title">
+                        Controles de sesión
+                      </h2>
+                      {!loaded ? (
+                        <Loading label="Comprobando la sesión…" />
+                      ) : session ? (
+                        <>
+                          <div className="stack stack--tight">
+                            <p className="card__subtitle">
+                              {nightLabel(session.fechaOperativa)}
+                            </p>
+                            <dl className="facts">
+                              <dt>Estado</dt>
+                              <dd>{sessionNotice(session.estado)}</dd>
+                              <dt>Abierta desde</dt>
+                              <dd>
+                                {new Date(session.abiertaAt).toLocaleString(
+                                  "es",
+                                  {
+                                    timeZone: selected.zonaHoraria,
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  },
+                                )}
+                              </dd>
+                              <dt>Zona horaria</dt>
+                              <dd>{timeZoneLabel(selected.zonaHoraria)}</dd>
+                            </dl>
+                          </div>
+                          <p className="status-line">{readiness}</p>
+                          {session.estado === "ABIERTA" && ownerAccess && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn--pill"
+                                disabled={busy || !loaded}
+                                onClick={() => void control("pause")}
+                              >
+                                <PauseIcon size={20} />
+                                Pausar solicitudes y votos
+                              </button>
+                              <p className="status-line">
+                                Quienes ya entraron conservan el acceso, pero no
+                                pueden pedir ni votar hasta que reanudes.
+                              </p>
+                            </>
+                          )}
+                          {session.estado === "PAUSADA" && ownerAccess && (
+                            <button
+                              type="button"
+                              className="btn btn--primary btn--pill"
+                              disabled={busy || !loaded}
+                              onClick={() => void control("resume")}
+                            >
+                              <PlayIcon size={20} />
+                              Reanudar solicitudes y votos
+                            </button>
+                          )}
+                          {ownerAccess && (
+                            <button
+                              type="button"
+                              className="btn btn--danger btn--pill"
+                              disabled={busy || !loaded}
+                              onClick={() => setClosing(true)}
+                            >
+                              <StopIcon size={20} />
+                              Finalizar sesión
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="card__text">
+                            No hay una sesión abierta. Ábrela para que tu
+                            público pueda unirse con el QR.
+                          </p>
+                          <ul
+                            className="checklist"
+                            aria-label="Requisitos para abrir"
+                          >
+                            {[
+                              [selected.activo, "Local activo"],
+                              [
+                                !selected.pausado && !selected.enMantenimiento,
+                                "Servicio sin pausa ni mantenimiento",
+                              ],
+                              [
+                                !!hasList,
+                                "Lista guardada en Configuración y listas",
+                              ],
+                            ].map(([ok, label]) => (
+                              <li
+                                key={String(label)}
+                                className={`checklist__item${ok ? " checklist__item--ok" : ""}`}
+                              >
+                                {ok ? (
+                                  <CheckIcon size={18} />
+                                ) : (
+                                  <CloseIcon size={18} />
+                                )}
+                                {label}
+                                <span className="sr-only">
+                                  {ok ? ": listo" : ": pendiente"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {ownerAccess && (
+                            <button
+                              type="button"
+                              className="btn btn--primary btn--pill"
+                              disabled={!canOpen}
+                              onClick={() => void mutate()}
+                            >
+                              <PlayIcon size={20} />
+                              Abrir sesión
+                            </button>
+                          )}
+                          <p className="status-line">
+                            {readiness} El horario del local también decide
+                            cuándo se puede participar.
+                          </p>
+                        </>
+                      )}
+                      {ownerAccess &&
+                        (selected.pausado || selected.enMantenimiento) && (
+                          <>
+                            <hr className="card__divider" />
+                            {selected.pausado && (
+                              <button
+                                type="button"
+                                className="btn btn--muted btn--pill"
+                                disabled={busy || !loaded}
+                                onClick={() => void control("service")}
+                              >
+                                <PlayIcon size={20} />
+                                Reanudar servicio del local
+                              </button>
+                            )}
+                            {selected.enMantenimiento && (
+                              <button
+                                type="button"
+                                className="btn btn--muted btn--pill"
+                                disabled={busy || !loaded || !!session}
+                                onClick={() => void control("maintenance")}
+                              >
+                                <WrenchIcon size={20} />
+                                Terminar mantenimiento
+                              </button>
+                            )}
+                          </>
+                        )}
                     </section>
                   </div>
                 )}
                 {(view === VIEW.PANEL || view === VIEW.QUEUE) && (
                   <QueuePanel
-                    key={`queue:${selected.id}:${session?.id ?? "none"}`}
+                    key={`queue:${view}:${selected.id}:${session?.id ?? "none"}:${session?.estado}:${selected.pausado}:${selected.enMantenimiento}:${loaded}`}
                     api={api}
                     establishment={selected}
                     session={loaded ? session : null}
+                    showPlaybackControls={view === VIEW.PANEL}
+                    onShowAll={() => go(VIEW.QUEUE)}
                   />
                 )}
-                {view === VIEW.CATALOG && (
-                  <section className="card">
-                    <p className="eyebrow">Catálogo conectado</p>
-                    <h2>Buscar canciones</h2>
-                    <form className="search" onSubmit={search}>
-                      <label htmlFor="query">
-                        Título o artista (2–100 caracteres)
-                      </label>
-                      <input
-                        id="query"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        minLength={2}
-                        maxLength={100}
-                        required
-                        disabled={busy}
-                      />
-                      <button type="submit" disabled={busy}>
-                        Buscar
-                      </button>
-                    </form>
-                    <p>
-                      Consulta del catálogo; añadir a la cola no está
-                      disponible.
-                    </p>
-                    {results && (
-                      <>
-                        <output className="status">
-                          {results.resultados.length
-                            ? `${results.resultados.length} resultados en esta página`
-                            : "No se encontraron canciones."}
-                        </output>
-                        <ul className="songs">
-                          {results.resultados.map((song) => (
-                            <li key={song.videoId}>
-                              <span className="song-icon" aria-hidden="true">
-                                ♪
-                              </span>
-                              <div>
-                                <h3>{song.titulo}</h3>
-                                <p>
-                                  {song.artista}
-                                  {song.artistaVerificado
-                                    ? " · Artista verificado"
-                                    : ""}
-                                </p>
-                                <p>
-                                  Canal: {song.canal} ·{" "}
-                                  {song.duracionSegundos === null
-                                    ? "Duración no disponible"
-                                    : `${Math.floor(song.duracionSegundos / 60)}:${String(song.duracionSegundos % 60).padStart(2, "0")}`}
-                                </p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                        {results.siguientePagina && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              void search(
-                                undefined,
-                                results.siguientePagina ?? undefined,
-                              )
-                            }
-                          >
-                            Siguiente página
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </section>
-                )}
               </>
-            )}
-          </>
-        )}
-        <footer>Acceso seguro de personal · Sin reproducción de audio</footer>
+            )
+          )}
+        </div>
       </main>
+      <ConfirmDialog
+        open={closing}
+        title="¿Finalizar la sesión de esta noche?"
+        confirmLabel="Finalizar sesión"
+        cancelLabel="Seguir con la sesión"
+        busy={busy}
+        onConfirm={() => void mutate()}
+        onCancel={() => setClosing(false)}
+      >
+        <p>
+          Los celulares conectados perderán el acceso. El historial de la noche
+          se conserva.
+        </p>
+        <p>Las solicitudes que no sonaron quedan sin atender.</p>
+      </ConfirmDialog>
     </div>
   );
 }

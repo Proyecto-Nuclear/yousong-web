@@ -4,6 +4,8 @@ export interface Establishment {
   qrSlug: string;
   zonaHoraria: string;
   activo: boolean;
+  pausado: boolean;
+  enMantenimiento: boolean;
   creadoAt: string;
 }
 export const SESSION_STATE = {
@@ -97,7 +99,18 @@ const ERROR_MESSAGES: Record<string, string> = {
   SESSION_IN_PROGRESS:
     "Finaliza la sesión antes de desactivar el establecimiento.",
   QUEUE_EMPTY:
-    "La cola está vacía. Primero se necesita una solicitud de participante.",
+    "La cola y la lista predeterminada no tienen canciones disponibles.",
+  NO_ESTABLISHMENT: "Esta cuenta todavía no tiene un establecimiento asociado.",
+  ESTABLISHMENT_ALREADY_EXISTS:
+    "Esta cuenta ya tiene un establecimiento. Actualiza antes de crear.",
+  SLUG_TAKEN: "El identificador QR ya está en uso.",
+  INVALID_TIME_ZONE: "La zona horaria IANA no es válida.",
+  ESTABLISHMENT_PAUSED: "El servicio del establecimiento está pausado.",
+  ESTABLISHMENT_IN_MAINTENANCE: "El establecimiento está en mantenimiento.",
+  SESSION_PAUSED: "La sesión está pausada. Reanúdala antes de participar.",
+  SESSION_NOT_PAUSABLE:
+    "Solo se puede pausar una sesión abierta. Actualiza el estado.",
+  SESSION_NOT_PAUSED: "La sesión no está pausada. Actualiza el estado.",
   PLAYBACK_IN_PROGRESS:
     "Ya hay una reproducción de servidor en curso. Actualiza el estado.",
   NO_ACTIVE_PLAYBACK: "No hay una reproducción activa en el servidor.",
@@ -125,7 +138,7 @@ export class ApiError extends Error {
       status === 401
         ? "Credencial no válida o caducada. Cierra la sesión y vuelve a iniciar sesión."
         : status === 403
-          ? "No tienes permisos para esta operación. Se requiere el rol correspondiente del backend."
+          ? "No tienes permisos para esta operación en el backend."
           : (ERROR_MESSAGES[code] ??
             `La API rechazó la operación (HTTP ${status}).`),
     );
@@ -169,24 +182,33 @@ export class AdminApi {
     return value;
   }
   async establishments(): Promise<Establishment[]> {
-    return checked(
-      await this.request("/api/staff/establecimientos"),
-      (v): v is Establishment[] =>
-        Array.isArray(v) &&
-        v.every(
-          (e) =>
-            record(e) &&
-            strings(e, ["id", "nombre", "qrSlug", "zonaHoraria", "creadoAt"]) &&
-            typeof e.activo === "boolean",
-        ),
-    );
+    // The collection is only a UI compatibility shape (zero or one); the
+    // backend resolves the account from JWT sub, never from a browser id.
+    try {
+      const value = checked(
+        await this.request("/api/mi-establecimiento"),
+        (e): e is Establishment =>
+          record(e) &&
+          strings(e, ["id", "nombre", "qrSlug", "zonaHoraria", "creadoAt"]) &&
+          typeof e.activo === "boolean" &&
+          typeof e.pausado === "boolean" &&
+          typeof e.enMantenimiento === "boolean",
+      );
+      return [value];
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 404 &&
+        error.code === "NO_ESTABLISHMENT"
+      )
+        return [];
+      throw error;
+    }
   }
-  async currentSession(id: string): Promise<Session | null> {
+  async currentSession(_scopeId: string): Promise<Session | null> {
     try {
       return checked(
-        await this.request(
-          `/api/staff/establecimientos/${encodeURIComponent(id)}/sesion-actual`,
-        ),
+        await this.request("/api/mi-establecimiento/sesion-actual"),
         isSession,
       );
     } catch (error) {
@@ -199,21 +221,15 @@ export class AdminApi {
       throw error;
     }
   }
-  async openSession(id: string): Promise<Session> {
+  async openSession(_scopeId: string): Promise<Session> {
     return checked(
-      await this.request(
-        `/api/admin/establecimientos/${encodeURIComponent(id)}/sesiones`,
-        "POST",
-      ),
+      await this.request("/api/mi-establecimiento/sesiones", "POST"),
       isSession,
     );
   }
-  async closeSession(id: string): Promise<Closure> {
+  async closeSession(_scopeId: string): Promise<Closure> {
     return checked(
-      await this.request(
-        `/api/admin/sesiones/${encodeURIComponent(id)}/cierre`,
-        "POST",
-      ),
+      await this.request("/api/mi-establecimiento/sesion/cierre", "POST"),
       (v): v is Closure =>
         record(v) &&
         isSession(v.sesion) &&
@@ -221,16 +237,26 @@ export class AdminApi {
         Number(v.pendientesAlCierre) >= 0,
     );
   }
-  async qr(id: string): Promise<Qr> {
+  async qr(_scopeId: string): Promise<Qr> {
     return checked(
-      await this.request(
-        `/api/admin/establecimientos/${encodeURIComponent(id)}/qr`,
-      ),
+      await this.request("/api/mi-establecimiento/qr"),
       (v): v is Qr =>
         record(v) &&
         strings(v, ["url", "svg"]) &&
         safeHttpUrl(String(v.url)) !== null &&
         String(v.svg).trimStart().startsWith("<svg"),
+    );
+  }
+  async pauseSession(): Promise<Session> {
+    return checked(
+      await this.request("/api/mi-establecimiento/sesion/pausa", "POST"),
+      isSession,
+    );
+  }
+  async resumeSession(): Promise<Session> {
+    return checked(
+      await this.request("/api/mi-establecimiento/sesion/reanudacion", "POST"),
+      isSession,
     );
   }
   async search(query: string, page?: string): Promise<SearchPage> {
@@ -242,7 +268,7 @@ export class AdminApi {
     const params = new URLSearchParams({ q });
     if (page) params.set("pagina", page);
     return checked(
-      await this.request(`/api/staff/catalogo/busqueda?${params}`),
+      await this.request(`/api/mi-establecimiento/catalogo/busqueda?${params}`),
       (v): v is SearchPage =>
         record(v) &&
         (v.siguientePagina === null || typeof v.siguientePagina === "string") &&
