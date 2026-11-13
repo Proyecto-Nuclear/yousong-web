@@ -15,6 +15,7 @@ export const SERVICE = {
   OPEN: "ABIERTO",
   PAUSED: "PAUSADO",
   CLOSED: "CERRADO",
+  MAINTENANCE: "MANTENIMIENTO",
 } as const;
 export type Service = (typeof SERVICE)[keyof typeof SERVICE];
 export interface CreateEstablishment {
@@ -74,8 +75,22 @@ export interface Queue {
   enReproduccion: Playing | null;
   cola: QueueItem[];
 }
+export const PLAYBACK_ORIGIN = {
+  REQUEST: "SOLICITUD",
+  DEFAULT: "DEFECTO",
+} as const;
+export type PlaybackOrigin =
+  (typeof PLAYBACK_ORIGIN)[keyof typeof PLAYBACK_ORIGIN];
+export interface Availability {
+  nombre: string;
+  qrSlug: string;
+  servicio: Service;
+  puedeParticipar: boolean;
+  proximaApertura?: string;
+}
 export interface Started {
   reproduccionId: string;
+  origen: PlaybackOrigin;
   solicitudId: string | null;
   cancion: QueueSong;
   iniciadaAt: string;
@@ -86,6 +101,7 @@ export interface Finished {
   reproduccionId: string;
   solicitudId: string | null;
   resultado: Finish;
+  motivoCodigo: string | null;
   terminadaAt: string;
   colaVersion: number;
 }
@@ -244,12 +260,25 @@ export function isQueue(value: unknown): value is Queue {
     )
   );
 }
+export function isAvailability(value: unknown): value is Availability {
+  return (
+    object(value) &&
+    typeof value.nombre === "string" &&
+    slug(value.qrSlug) &&
+    Object.values(SERVICE).some((state) => state === value.servicio) &&
+    typeof value.puedeParticipar === "boolean" &&
+    (value.proximaApertura === undefined ||
+      typeof value.proximaApertura === "string") &&
+    !["token", "dispositivoToken", "seudonimo"].some((key) => key in value)
+  );
+}
 export function isStarted(value: unknown): value is Started {
   return (
     object(value) &&
     typeof value.reproduccionId === "string" &&
     nullableText(value.solicitudId) &&
     isQueueSong(value.cancion) &&
+    Object.values(PLAYBACK_ORIGIN).some((origin) => origin === value.origen) &&
     typeof value.iniciadaAt === "string" &&
     integer(value.votos) &&
     integer(value.colaVersion)
@@ -261,6 +290,7 @@ export function isFinished(value: unknown): value is Finished {
     typeof value.reproduccionId === "string" &&
     nullableText(value.solicitudId) &&
     isFinish(value.resultado) &&
+    nullableText(value.motivoCodigo) &&
     typeof value.terminadaAt === "string" &&
     integer(value.colaVersion)
   );

@@ -16,11 +16,11 @@ import { OperationStatus, useDemoOperation } from "./operation";
 export function ListConfiguration({
   api,
   establishmentId,
-  isAdmin,
+  canManage,
 }: {
   api: DemoApi;
   establishmentId: string;
-  isAdmin: boolean;
+  canManage: boolean;
 }) {
   const [current, setCurrent] = useState<DefaultList | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -37,7 +37,7 @@ export function ListConfiguration({
       setLoaded(true);
       setUncertain(false);
     });
-    if (isAdmin) {
+    if (canManage) {
       const versions = await api.listHistory(establishmentId);
       commit(() => setHistory(versions));
     }
@@ -74,8 +74,8 @@ export function ListConfiguration({
         </>
       ) : (
         <p>
-          No hay lista predeterminada. Un administrador debe publicar una antes
-          de abrir la sesión.
+          No hay lista predeterminada. Publica una versión antes de abrir la
+          sesión.
         </p>
       )}
       {history && (
@@ -97,10 +97,11 @@ export function ListConfiguration({
         </>
       )}
       <p>
-        La lista es un requisito de apertura. No inicia audio ni alimenta
-        automáticamente la cola del servidor.
+        La lista es un requisito de apertura y el backend puede usarla cuando no
+        hay solicitudes. Publicarla no inicia audio. Después de publicar,
+        actualiza el estado del establecimiento antes de abrir.
       </p>
-      {isAdmin ? (
+      {canManage ? (
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -183,14 +184,14 @@ export function ListConfiguration({
           </fieldset>
         </form>
       ) : (
-        <p>Publicar listas y consultar el historial requiere ADMINISTRADOR.</p>
+        <p>Inicia sesión para publicar listas y consultar el historial.</p>
       )}
       <fieldset disabled={op.busy}>
         <CatalogPicker
           api={api}
           selected={draft.map((song) => song.videoId)}
           onPick={
-            isAdmin
+            canManage
               ? (song) =>
                   setDraft((previous) =>
                     previous.length >= 200 ||

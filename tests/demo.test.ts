@@ -4,6 +4,188 @@ import { proxyRequest } from "../src/lib/bff";
 import { DemoApi } from "../src/lib/demo-api";
 import { OperationGate } from "../src/lib/demo-operation";
 
+test("owner-only BFF rejects legacy and foreign identifier routes without effects", async () => {
+  const h = harness();
+  for (const path of [
+    "/api/staff/establecimientos",
+    "/api/admin/establecimientos",
+    `/api/mi-establecimiento/${id}`,
+    `/api/mi-establecimiento/sesiones/${id}`,
+    "/api/mi-establecimiento?establecimientoId=foreign",
+  ]) {
+    const response = await proxyRequest(request(path), h);
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { code: "NOT_FOUND" });
+  }
+  for (const body of [
+    { nombre: "Sala", propietarioSub: "foreign" },
+    { nombre: "Sala", establecimientoId: id },
+    { nombre: "Sala", sesionId: id },
+  ]) {
+    const response = await proxyRequest(
+      request("/api/mi-establecimiento", "POST", JSON.stringify(body)),
+      h,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: "INVALID_BODY" });
+  }
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.credentials, 0);
+});
+
+test("session pause/resume and effective public availability are narrowly allowed", async () => {
+  for (const path of [
+    "/api/mi-establecimiento/sesion/pausa",
+    "/api/mi-establecimiento/sesion/reanudacion",
+    "/api/mi-establecimiento/reanudacion",
+    "/api/mi-establecimiento/mantenimiento/fin",
+  ]) {
+    const h = harness();
+    const rejected = await proxyRequest(
+      request(path, "POST", undefined, null),
+      h,
+    );
+    assert.equal(rejected.status, 403);
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.credentials, 0);
+    const response = await proxyRequest(request(path, "POST"), h);
+    assert.equal(response.status, 201);
+    assert.equal(h.calls[0].url, h.apiUrl + path);
+    assert.equal(h.calls[0].init?.body, undefined);
+  }
+  const h = harness();
+  assert.equal(
+    (await proxyRequest(request("/api/public/establecimientos/sala"), h))
+      .status,
+    201,
+  );
+  assert.equal(h.calls.length, 1);
+});
+
+test("public queue accepts maintenance and default-list playback acknowledgments", async () => {
+  const start = {
+    reproduccionId: id,
+    origen: "DEFECTO",
+    solicitudId: null,
+    cancion: song,
+    iniciadaAt: establishment.creadoAt,
+    votos: 0,
+    colaVersion: 3,
+  };
+  const end = {
+    reproduccionId: id,
+    solicitudId: null,
+    resultado: "COMPLETADA",
+    motivoCodigo: null,
+    terminadaAt: establishment.creadoAt,
+    colaVersion: 4,
+  };
+  const h = apiHarness([{ ...snapshot, estado: "MANTENIMIENTO" }, start, end]);
+  assert.equal((await h.api.queue("sala")).estado, "MANTENIMIENTO");
+  assert.deepEqual(await h.api.next(id), start);
+  assert.deepEqual(await h.api.finish(id, "COMPLETADA"), end);
+  assert.equal(h.calls.length, 3);
+});
+
+test("owner session and service controls send no foreign identifiers and preserve rejection", async () => {
+  const session = {
+    id,
+    establecimientoId: id,
+    listaId: id,
+    fechaOperativa: "2026-06-01",
+    estado: "PAUSADA",
+    abiertaAt: establishment.creadoAt,
+    cerradaAt: null,
+  };
+  const h = apiHarness([
+    session,
+    { ...session, estado: "ABIERTA" },
+    establishment,
+    establishment,
+  ]);
+  assert.deepEqual(await h.api.pauseSession(), session);
+  assert.equal((await h.api.resumeSession()).estado, "ABIERTA");
+  assert.deepEqual(await h.api.resumeService(), establishment);
+  assert.deepEqual(await h.api.endMaintenance(), establishment);
+  assert.deepEqual(
+    h.calls.map((call) => [call.url, call.options.method, call.options.body]),
+    [
+      ["/api/bff/api/mi-establecimiento/sesion/pausa", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/sesion/reanudacion", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/reanudacion", "POST", undefined],
+      ["/api/bff/api/mi-establecimiento/mantenimiento/fin", "POST", undefined],
+    ],
+  );
+  let calls = 0;
+  const rejected = new DemoApi(async () => {
+    calls++;
+    return Response.json(
+      { code: "SESSION_NOT_PAUSABLE", detail: "private" },
+      { status: 409 },
+    );
+  });
+  await assert.rejects(rejected.pauseSession(), /Solo se puede pausar/);
+  assert.equal(calls, 1);
+});
+
+test("public effective availability distinguishes service states and optional next opening without credentials", async () => {
+  for (const servicio of ["ABIERTO", "PAUSADO", "CERRADO", "MANTENIMIENTO"]) {
+    const value = {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio,
+      puedeParticipar: servicio === "ABIERTO",
+      proximaApertura: "2026-06-02T00:00:00Z",
+    };
+    const h = apiHarness([value]);
+    assert.deepEqual(await h.api.availability("sala"), value);
+    assert.equal(h.calls[0].url, "/api/bff/api/public/establecimientos/sala");
+    assert.equal(
+      new Headers(h.calls[0].options.headers).has("Authorization"),
+      false,
+    );
+  }
+  const h = apiHarness([
+    {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio: "ABIERTA",
+      puedeParticipar: true,
+    },
+    {
+      nombre: "Sala",
+      qrSlug: "sala",
+      servicio: "ABIERTO",
+      puedeParticipar: true,
+      token: "synthetic-only",
+    },
+  ]);
+  await assert.rejects(h.api.availability("sala"), /respuesta/);
+  await assert.rejects(h.api.availability("sala"), /respuesta/);
+  await assert.rejects(h.api.availability("Bad"));
+  assert.equal(h.calls.length, 2);
+});
+
+test("only exact NO_ESTABLISHMENT 404 enables onboarding", async () => {
+  for (const [status, code] of [
+    [404, "ESTABLISHMENT_NOT_FOUND"],
+    [500, "NO_ESTABLISHMENT"],
+    [401, "NO_ESTABLISHMENT"],
+  ] as const) {
+    let calls = 0;
+    const api = new DemoApi(async () => {
+      calls++;
+      return Response.json({ code }, { status });
+    });
+    await assert.rejects(api.establishments());
+    assert.equal(calls, 1);
+  }
+  const api = new DemoApi(async () =>
+    Response.json({ code: "NO_ESTABLISHMENT" }, { status: 404 }),
+  );
+  assert.deepEqual(await api.establishments(), []);
+});
+
 test("operation gate rejects duplicate clicks, late selection/unmount results and older snapshots", () => {
   const gate = new OperationGate();
   const first = gate.begin();
@@ -48,6 +230,8 @@ const establishment = {
   qrSlug: "sala",
   zonaHoraria: "America/Bogota",
   activo: true,
+  pausado: false,
+  enMantenimiento: false,
   creadoAt: "2026-06-01T00:00:00Z",
 };
 const list = {
@@ -85,16 +269,16 @@ const snapshot = {
   ],
 };
 const writes = [
-  ["POST", "/api/admin/establecimientos", { nombre: "Sala" }],
-  ["PATCH", `/api/admin/establecimientos/${id}`, { activo: false }],
+  ["POST", "/api/mi-establecimiento", { nombre: "Sala" }],
+  ["PATCH", "/api/mi-establecimiento", { activo: false }],
   [
     "PUT",
-    `/api/admin/establecimientos/${id}/lista-defecto`,
+    "/api/mi-establecimiento/lista-defecto",
     { canciones: [song.videoId], politicaRotacion: "ALEATORIA" },
   ],
   [
     "POST",
-    `/api/staff/sesiones/${id}/reproduccion/fin`,
+    "/api/mi-establecimiento/reproduccion/fin",
     { resultado: "COMPLETADA" },
   ],
 ] as const;
@@ -271,9 +455,9 @@ test("BFF rejects non-JSON content before upstream effects", async () => {
   assert.equal(h.credentials, 0);
 });
 const reads = [
-  `/api/staff/establecimientos/${id}/lista-defecto`,
-  `/api/admin/establecimientos/${id}/listas-defecto`,
-  "/api/staff/catalogo/sugerencias?q=ro",
+  "/api/mi-establecimiento/lista-defecto",
+  "/api/mi-establecimiento/listas-defecto",
+  "/api/mi-establecimiento/catalogo/sugerencias?q=ro",
   "/api/public/establecimientos/sala/cola",
 ];
 test("BFF narrowly allows list/history/suggestions/public queue through authenticated transport", async () => {
@@ -307,7 +491,7 @@ test("BFF narrowly allows list/history/suggestions/public queue through authenti
     `?q=${"x".repeat(101)}`,
   ]) {
     const response = await proxyRequest(
-      request(`/api/staff/catalogo/sugerencias${query}`),
+      request(`/api/mi-establecimiento/catalogo/sugerencias${query}`),
       h,
     );
     assert.equal(response.status, 400);
@@ -317,7 +501,7 @@ test("BFF narrowly allows list/history/suggestions/public queue through authenti
 });
 test("BFF next is bodyless, Origin-protected and forwards exact path", async () => {
   const h = harness();
-  const path = `/api/staff/sesiones/${id}/reproduccion/siguiente`;
+  const path = "/api/mi-establecimiento/reproduccion/siguiente";
   assert.equal(
     (await proxyRequest(request(path, "POST", undefined, null), h)).status,
     403,
@@ -326,14 +510,14 @@ test("BFF next is bodyless, Origin-protected and forwards exact path", async () 
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].init?.body, undefined);
 });
-test("BFF preserves all six existing bodyless route contracts and catalog pagination", async () => {
+test("BFF migrates six bodyless contracts and preserves catalog pagination", async () => {
   const existing = [
-    ["GET", "/api/staff/establecimientos"],
-    ["GET", `/api/staff/establecimientos/${id}/sesion-actual`],
-    ["GET", `/api/admin/establecimientos/${id}/qr`],
-    ["GET", "/api/staff/catalogo/busqueda?q=rock&pagina=next="],
-    ["POST", `/api/admin/establecimientos/${id}/sesiones`],
-    ["POST", `/api/admin/sesiones/${id}/cierre`],
+    ["GET", "/api/mi-establecimiento"],
+    ["GET", "/api/mi-establecimiento/sesion-actual"],
+    ["GET", "/api/mi-establecimiento/qr"],
+    ["GET", "/api/mi-establecimiento/catalogo/busqueda?q=rock&pagina=next="],
+    ["POST", "/api/mi-establecimiento/sesiones"],
+    ["POST", "/api/mi-establecimiento/sesion/cierre"],
   ];
   for (const [method, path] of existing) {
     const h = harness();
@@ -388,7 +572,7 @@ test("new BFF contracts preserve error status/code without upstream diagnostics"
         { status },
       );
     const response = await proxyRequest(
-      request(`/api/staff/sesiones/${id}/reproduccion/siguiente`, "POST"),
+      request("/api/mi-establecimiento/reproduccion/siguiente", "POST"),
       h,
     );
     assert.equal(response.status, status);
@@ -436,8 +620,8 @@ test("Demo API creates and edits establishments with exact DTO and request bodie
       JSON.parse(String(c.options.body)),
     ]),
     [
-      ["/api/bff/api/admin/establecimientos", "POST", { nombre: "Sala" }],
-      [`/api/bff/api/admin/establecimientos/${id}`, "PATCH", { activo: true }],
+      ["/api/bff/api/mi-establecimiento", "POST", { nombre: "Sala" }],
+      ["/api/bff/api/mi-establecimiento", "PATCH", { activo: true }],
     ],
   );
 });
@@ -473,7 +657,10 @@ test("Demo API distinguishes suggestion strings from songs and public queue from
   const h = apiHarness([suggestions, snapshot]);
   assert.deepEqual(await h.api.suggestions(" ro "), suggestions);
   assert.deepEqual(await h.api.queue("sala"), snapshot);
-  assert.equal(h.calls[0].url, "/api/bff/api/staff/catalogo/sugerencias?q=ro");
+  assert.equal(
+    h.calls[0].url,
+    "/api/bff/api/mi-establecimiento/catalogo/sugerencias?q=ro",
+  );
   assert.equal(
     h.calls[1].url,
     "/api/bff/api/public/establecimientos/sala/cola",
@@ -483,6 +670,7 @@ test("Demo API distinguishes suggestion strings from songs and public queue from
 test("Demo API next and finish use queue-song DTO without canal and acknowledge server version", async () => {
   const start = {
     reproduccionId: id,
+    origen: "SOLICITUD",
     solicitudId: id,
     cancion: song,
     iniciadaAt: establishment.creadoAt,
@@ -493,6 +681,7 @@ test("Demo API next and finish use queue-song DTO without canal and acknowledge 
     reproduccionId: id,
     solicitudId: id,
     resultado: "SALTADA",
+    motivoCodigo: "SALTO_MANUAL",
     terminadaAt: establishment.creadoAt,
     colaVersion: 4,
   };
@@ -502,7 +691,7 @@ test("Demo API next and finish use queue-song DTO without canal and acknowledge 
   assert.equal(h.calls[0].options.body, undefined);
   assert.equal(
     h.calls[0].url,
-    `/api/bff/api/staff/sesiones/${id}/reproduccion/siguiente`,
+    "/api/bff/api/mi-establecimiento/reproduccion/siguiente",
   );
   assert.deepEqual(JSON.parse(String(h.calls[1].options.body)), {
     resultado: "SALTADA",
@@ -579,3 +768,47 @@ test("Demo API reports conflict, permission, invalid and uncertain results witho
   await assert.rejects(offline.next(id), /incierto/);
   assert.equal(calls, 1);
 });
+
+test("owner search rejects duplicate pagination before credentials or effects", async () => {
+  const h = harness();
+  const response = await proxyRequest(
+    request("/api/mi-establecimiento/catalogo/busqueda?q=ro&pagina=a&pagina=b"),
+    h,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { code: "INVALID_QUERY" });
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(h.credentials, 0);
+  assert.equal(h.calls.length, 0);
+});
+
+test(
+  "owner JSON read deadline cancels stalled input without effects",
+  { timeout: 8000 },
+  async () => {
+    const h = harness();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await proxyRequest(
+      new Request(`${app}/api/bff/api/mi-establecimiento`, {
+        method: "POST",
+        headers: { Origin: app, "Content-Type": "application/json" },
+        body,
+        duplex: "half",
+      } as RequestInit),
+      h,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: "INVALID_BODY" });
+    assert.equal(cancelled, true);
+    assert.equal(h.credentials, 0);
+    assert.equal(h.calls.length, 0);
+  },
+);

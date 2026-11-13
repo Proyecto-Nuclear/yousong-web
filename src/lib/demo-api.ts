@@ -1,7 +1,9 @@
 import { AdminApi, ApiError, checked, type Establishment } from "./admin-api";
 import {
+  type Availability,
   type DefaultList,
   type Finished,
+  isAvailability,
   isCreate,
   isFinishBody,
   isFinished,
@@ -26,7 +28,9 @@ function establishment(value: unknown): value is Establishment {
     ["id", "nombre", "qrSlug", "zonaHoraria", "creadoAt"].every(
       (key) => typeof value[key] === "string",
     ) &&
-    typeof value.activo === "boolean"
+    typeof value.activo === "boolean" &&
+    typeof value.pausado === "boolean" &&
+    typeof value.enMantenimiento === "boolean"
   );
 }
 function input<T>(value: unknown, guard: (value: unknown) => value is T): T {
@@ -44,7 +48,7 @@ export class DemoApi extends AdminApi {
   async createEstablishment(value: unknown): Promise<Establishment> {
     return checked(
       await this.request(
-        "/api/admin/establecimientos",
+        "/api/mi-establecimiento",
         "POST",
         input(value, isCreate),
       ),
@@ -52,34 +56,32 @@ export class DemoApi extends AdminApi {
     );
   }
   async updateEstablishment(
-    id: string,
+    _scopeId: string,
     value: unknown,
   ): Promise<Establishment> {
     return checked(
       await this.request(
-        `/api/admin/establecimientos/${encoded(id)}`,
+        "/api/mi-establecimiento",
         "PATCH",
         input(value, isUpdate),
       ),
       establishment,
     );
   }
-  async publishList(id: string, value: unknown): Promise<DefaultList> {
+  async publishList(_scopeId: string, value: unknown): Promise<DefaultList> {
     return checked(
       await this.request(
-        `/api/admin/establecimientos/${encoded(id)}/lista-defecto`,
+        "/api/mi-establecimiento/lista-defecto",
         "PUT",
         input(value, isPublish),
       ),
       isList,
     );
   }
-  async currentList(id: string): Promise<DefaultList | null> {
+  async currentList(_scopeId: string): Promise<DefaultList | null> {
     try {
       return checked(
-        await this.request(
-          `/api/staff/establecimientos/${encoded(id)}/lista-defecto`,
-        ),
+        await this.request("/api/mi-establecimiento/lista-defecto"),
         isList,
       );
     } catch (error) {
@@ -92,19 +94,38 @@ export class DemoApi extends AdminApi {
       throw error;
     }
   }
-  async listHistory(id: string): Promise<ListSummary[]> {
+  async listHistory(_scopeId: string): Promise<ListSummary[]> {
     return checked(
-      await this.request(
-        `/api/admin/establecimientos/${encoded(id)}/listas-defecto`,
-      ),
+      await this.request("/api/mi-establecimiento/listas-defecto"),
       (value): value is ListSummary[] =>
         Array.isArray(value) && value.every(isSummary),
     );
   }
   async suggestions(text: string): Promise<Suggestions> {
     return checked(
-      await this.request(`/api/staff/catalogo/sugerencias?${query(text)}`),
+      await this.request(
+        `/api/mi-establecimiento/catalogo/sugerencias?${query(text)}`,
+      ),
       isSuggestions,
+    );
+  }
+  async resumeService(): Promise<Establishment> {
+    return checked(
+      await this.request("/api/mi-establecimiento/reanudacion", "POST"),
+      establishment,
+    );
+  }
+  async endMaintenance(): Promise<Establishment> {
+    return checked(
+      await this.request("/api/mi-establecimiento/mantenimiento/fin", "POST"),
+      establishment,
+    );
+  }
+  async availability(qrSlug: string): Promise<Availability> {
+    input(qrSlug, slug);
+    return checked(
+      await this.request(`/api/public/establecimientos/${encoded(qrSlug)}`),
+      isAvailability,
     );
   }
   async queue(qrSlug: string): Promise<Queue> {
@@ -116,19 +137,19 @@ export class DemoApi extends AdminApi {
       isQueue,
     );
   }
-  async next(id: string): Promise<Started> {
+  async next(_scopeId: string): Promise<Started> {
     return checked(
       await this.request(
-        `/api/staff/sesiones/${encoded(id)}/reproduccion/siguiente`,
+        "/api/mi-establecimiento/reproduccion/siguiente",
         "POST",
       ),
       isStarted,
     );
   }
-  async finish(id: string, result: string): Promise<Finished> {
+  async finish(_scopeId: string, result: string): Promise<Finished> {
     return checked(
       await this.request(
-        `/api/staff/sesiones/${encoded(id)}/reproduccion/fin`,
+        "/api/mi-establecimiento/reproduccion/fin",
         "POST",
         input({ resultado: result }, isFinishBody),
       ),

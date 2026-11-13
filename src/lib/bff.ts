@@ -6,42 +6,37 @@ export interface BffOptions {
   credential: () => Promise<string | null>;
   transport: typeof fetch;
 }
-const UUID =
-  "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const GET_PATHS = [
-  /^\/api\/staff\/establecimientos$/,
-  new RegExp(`^/api/staff/establecimientos/${UUID}/sesion-actual$`),
-  new RegExp(`^/api/admin/establecimientos/${UUID}/qr$`),
-  /^\/api\/staff\/catalogo\/busqueda$/,
-  /^\/api\/staff\/catalogo\/sugerencias$/,
-  new RegExp(`^/api/staff/establecimientos/${UUID}/lista-defecto$`),
-  new RegExp(`^/api/admin/establecimientos/${UUID}/listas-defecto$`),
-  /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}\/cola$/,
+  /^\/api\/mi-establecimiento$/,
+  /^\/api\/mi-establecimiento\/(sesion-actual|qr|lista-defecto|listas-defecto)$/,
+  /^\/api\/mi-establecimiento\/catalogo\/(busqueda|sugerencias)$/,
+  /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}(?:\/cola)?$/,
 ];
 const POST_PATHS = [
-  new RegExp(`^/api/admin/establecimientos/${UUID}/sesiones$`),
-  new RegExp(`^/api/admin/sesiones/${UUID}/cierre$`),
-  new RegExp(`^/api/staff/sesiones/${UUID}/reproduccion/siguiente$`),
+  /^\/api\/mi-establecimiento\/sesiones$/,
+  /^\/api\/mi-establecimiento\/(reanudacion|mantenimiento\/fin)$/,
+  /^\/api\/mi-establecimiento\/sesion\/(cierre|pausa|reanudacion)$/,
+  /^\/api\/mi-establecimiento\/reproduccion\/siguiente$/,
 ];
 const JSON_ROUTES = [
   {
     method: "POST",
-    path: /^\/api\/admin\/establecimientos$/,
+    path: /^\/api\/mi-establecimiento$/,
     validate: isCreate,
   },
   {
     method: "PATCH",
-    path: new RegExp(`^/api/admin/establecimientos/${UUID}$`),
+    path: /^\/api\/mi-establecimiento$/,
     validate: isUpdate,
   },
   {
     method: "PUT",
-    path: new RegExp(`^/api/admin/establecimientos/${UUID}/lista-defecto$`),
+    path: /^\/api\/mi-establecimiento\/lista-defecto$/,
     validate: isPublish,
   },
   {
     method: "POST",
-    path: new RegExp(`^/api/staff/sesiones/${UUID}/reproduccion/fin$`),
+    path: /^\/api\/mi-establecimiento\/reproduccion\/fin$/,
     validate: isFinishBody,
   },
 ];
@@ -125,8 +120,8 @@ export async function proxyRequest(
   if (!jsonRoute && !paths.some((pattern) => pattern.test(path)))
     return reply(404, "NOT_FOUND");
   if (
-    path === "/api/staff/catalogo/busqueda" ||
-    path === "/api/staff/catalogo/sugerencias"
+    path === "/api/mi-establecimiento/catalogo/busqueda" ||
+    path === "/api/mi-establecimiento/catalogo/sugerencias"
   ) {
     const suggestions = path.endsWith("sugerencias");
     const q = url.searchParams.get("q");
@@ -179,14 +174,7 @@ export async function proxyRequest(
     );
     if (response.status >= 300 && response.status < 400)
       return reply(502, "UPSTREAM_REDIRECT");
-    const newContract =
-      jsonRoute ||
-      path.endsWith("/reproduccion/siguiente") ||
-      path.endsWith("/lista-defecto") ||
-      path.endsWith("/listas-defecto") ||
-      path.endsWith("/sugerencias") ||
-      path.endsWith("/cola");
-    if (newContract && !response.ok) {
+    if (!response.ok) {
       const error: unknown = await response.json().catch(() => null);
       const code =
         typeof error === "object" &&
