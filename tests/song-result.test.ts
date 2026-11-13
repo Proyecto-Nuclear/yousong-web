@@ -1,8 +1,13 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SongResultRow } from "../src/components/owner/song-result";
+import {
+  SongResultRow,
+  SongSuggestion,
+} from "../src/components/owner/song-result";
 import type { Song } from "../src/lib/admin-api";
 import { safeThumbnailUrl } from "../src/lib/thumbnail";
 
@@ -96,4 +101,43 @@ test("the add button reflects whether the song is already in the list or the lis
   assert.match(row({}, true), /ya está en tu lista/);
   assert.match(row({}, true), /disabled/);
   assert.match(row({}, false, true), /disabled/);
+});
+
+const suggestion = (added = false, full = false, over: Partial<Song> = {}) =>
+  renderToStaticMarkup(
+    createElement(SongSuggestion, {
+      song: { ...song, ...over },
+      added,
+      full,
+      onPick: () => {},
+    }),
+  );
+
+test("a song suggestion shows a compact thumbnail, one line of text and the add action", () => {
+  const html = suggestion();
+  assert.match(html, /song-thumb--compact/);
+  assert.match(html, /<img[^>]+src="https:\/\/i\.ytimg\.com\//);
+  assert.match(html, /class="song-thumb__time">4:08</);
+  assert.match(html, /<strong title="Juanes - La Camisa Negra">/);
+  assert.match(html, /aria-label="Añadir Juanes - La Camisa Negra a la lista"/);
+  assert.match(html, />Añadir</);
+  assert.doesNotMatch(html, /disabled/);
+});
+
+test("a suggestion for a song already in the draft, or a full draft, cannot be added again", () => {
+  assert.match(suggestion(true), /ya está en tu lista/);
+  assert.match(suggestion(true), /disabled/);
+  assert.match(suggestion(true), />Añadida</);
+  assert.match(suggestion(false, true), /disabled/);
+});
+
+test("the stack layout never grows past its container because of long unbroken content", () => {
+  const css = readFileSync(resolve("src/app/globals.css"), "utf8");
+  const stack = /\.stack \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(stack, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  const list = /\.suggestions \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(list, /min-width:\s*0/);
+  const text = /\.suggestion__text > \* \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(text, /text-overflow:\s*ellipsis/);
+  assert.match(text, /white-space:\s*nowrap/);
 });

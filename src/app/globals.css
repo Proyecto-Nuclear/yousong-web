@@ -299,6 +299,7 @@
   }
   .stack {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--s4);
     align-content: start;
   }
@@ -1332,37 +1333,77 @@
       justify-self: stretch;
     }
   }
+  /* Suggestions: a vertical list like YouTube's, one line per entry */
   .suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s2);
+    display: grid;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    overflow: hidden;
+  }
+  .suggestions > li + li {
+    border-top: 1px solid var(--hairline);
   }
   .suggestion {
-    min-height: 36px;
-    padding: 0 var(--s3);
-    border: 1px solid var(--border);
-    border-radius: var(--r-pill);
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: var(--s2) var(--s4);
+    border: 0;
     background: transparent;
-    font-size: var(--fs-13);
-    font-weight: 500;
+    font-size: var(--fs-15);
+    text-align: left;
     cursor: pointer;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    position: relative;
-  }
-  .suggestion::after {
-    content: "";
-    position: absolute;
-    inset: -4px 0;
   }
   .suggestion:hover:not(:disabled) {
     background: var(--raised);
   }
   .suggestion:disabled {
-    opacity: 0.5;
+    opacity: 0.55;
     cursor: not-allowed;
+  }
+  .suggestion > svg {
+    flex: none;
+    color: var(--muted);
+  }
+  .suggestion__text {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+  }
+  .suggestion__text > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .suggestion__sub {
+    color: var(--muted);
+    font-size: var(--fs-13);
+  }
+  .suggestion__action {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s1);
+    font-size: var(--fs-13);
+    font-weight: 700;
+  }
+  .song-thumb--compact {
+    flex: none;
+    width: 72px;
+  }
+  .song-thumb--compact .song-thumb__time {
+    right: var(--s1);
+    bottom: var(--s1);
+    padding: 0 var(--s1);
+    font-size: 10px;
+  }
+  .song-thumb--compact .cover {
+    width: 32px;
+    height: 32px;
   }
 
   /* List workspace: draft beside the catalog search on wide screens */
