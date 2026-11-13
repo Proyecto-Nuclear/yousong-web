@@ -4,12 +4,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { SearchPage, Song } from "../../lib/admin-api";
 import type { DemoApi } from "../../lib/demo-api";
 import { SUGGESTION, type Suggestions } from "../../lib/demo-contracts";
-import { formatDuration, songMeta } from "../../lib/format";
 import { ownerError } from "../../lib/owner-copy";
-import { Cover } from "../cover";
-import { CheckIcon, SearchIcon } from "../icons";
+import { SearchIcon } from "../icons";
 import { ErrorCallout, Loading } from "./feedback";
 import { useOwnerOperation } from "./operation";
+import { SongResultRow } from "./song-result";
 
 export function CatalogPicker({
   api,
@@ -140,42 +139,15 @@ export function CatalogPicker({
               : `No encontramos canciones para «${searched}». Prueba con otro título o artista.`}
           </p>
           <ul className="song-list" aria-label="Resultados de la búsqueda">
-            {page.resultados.map((song) => {
-              const added = selected.includes(song.videoId);
-              return (
-                <li key={song.videoId} className="song-row">
-                  <Cover title={song.titulo} size={40} />
-                  <div>
-                    <p className="song-row__title">{song.titulo}</p>
-                    <p className="song-row__meta">
-                      {formatDuration(song.duracionSegundos) === null
-                        ? `${song.artista} · Duración no disponible`
-                        : songMeta(song.artista, song.duracionSegundos)}
-                      {song.artistaVerificado ? " · Artista verificado" : ""}
-                      {song.canal && song.canal !== song.artista
-                        ? ` · Canal: ${song.canal}`
-                        : ""}
-                    </p>
-                  </div>
-                  {onPick && (
-                    <button
-                      type="button"
-                      className="btn btn--small"
-                      disabled={added || full}
-                      aria-label={
-                        added
-                          ? `${song.titulo} ya está en tu lista`
-                          : `Añadir ${song.titulo} a la lista`
-                      }
-                      onClick={() => onPick(song)}
-                    >
-                      {added ? <CheckIcon size={18} /> : null}
-                      {added ? "Añadida" : "Añadir"}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
+            {page.resultados.map((song) => (
+              <SongResultRow
+                key={song.videoId}
+                song={song}
+                added={selected.includes(song.videoId)}
+                full={full}
+                onPick={onPick}
+              />
+            ))}
           </ul>
           {page.siguientePagina && (
             <button
