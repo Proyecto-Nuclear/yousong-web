@@ -8,7 +8,7 @@ import { ownerError } from "../../lib/owner-copy";
 import { SearchIcon } from "../icons";
 import { ErrorCallout, Loading } from "./feedback";
 import { useOwnerOperation } from "./operation";
-import { SongResultRow } from "./song-result";
+import { SongResultRow, SongSuggestion } from "./song-result";
 
 export function CatalogPicker({
   api,
@@ -108,21 +108,22 @@ export function CatalogPicker({
           {suggestions.sugerencias.map((item) => (
             <li key={`${item.tipo}:${item.texto}`}>
               {item.tipo === SUGGESTION.SONG && onPick ? (
-                <button
-                  type="button"
-                  className="suggestion"
-                  disabled={selected.includes(item.cancion.videoId) || full}
-                  onClick={() => onPick(item.cancion)}
-                >
-                  Añadir {item.texto}
-                </button>
+                <SongSuggestion
+                  song={item.cancion}
+                  added={selected.includes(item.cancion.videoId)}
+                  full={full}
+                  onPick={onPick}
+                />
               ) : (
                 <button
                   type="button"
                   className="suggestion"
                   onClick={() => changeQuery(item.texto)}
                 >
-                  {item.texto}
+                  <SearchIcon size={18} />
+                  <span className="suggestion__text">
+                    <span>{item.texto}</span>
+                  </span>
                 </button>
               )}
             </li>

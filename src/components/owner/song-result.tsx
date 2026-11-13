@@ -12,16 +12,26 @@ export function SongThumbnail({
   url,
   title,
   seconds,
+  compact = false,
 }: {
   url: string | null;
   title: string;
   seconds: number | null;
+  compact?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const src = failed ? null : safeThumbnailUrl(url);
   const duration = formatDuration(seconds);
   return (
-    <div className={src ? "song-thumb" : "song-thumb song-thumb--fallback"}>
+    <div
+      className={[
+        "song-thumb",
+        src ? "" : "song-thumb--fallback",
+        compact ? "song-thumb--compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {src ? (
         // biome-ignore lint/performance/noImgElement: remote YouTube thumbnails are validated and must not go through the image optimizer
         <img
@@ -97,5 +107,47 @@ export function SongResultRow({
         </button>
       )}
     </li>
+  );
+}
+
+/** A song suggestion: tapping it adds the song to the draft. One line of text, clipped with an ellipsis. */
+export function SongSuggestion({
+  song,
+  added,
+  full,
+  onPick,
+}: {
+  song: Song;
+  added: boolean;
+  full: boolean;
+  onPick: (song: Song) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="suggestion suggestion--song"
+      disabled={added || full}
+      aria-label={
+        added
+          ? `${song.titulo} ya está en tu lista`
+          : `Añadir ${song.titulo} a la lista`
+      }
+      onClick={() => onPick(song)}
+    >
+      <SongThumbnail
+        url={song.miniaturaUrl}
+        title={song.titulo}
+        seconds={song.duracionSegundos}
+        compact
+      />
+      <span className="suggestion__text">
+        <strong title={song.titulo}>{song.titulo}</strong>
+        <span className="suggestion__sub">{song.artista}</span>
+      </span>
+      <span className="suggestion__action" aria-hidden="true">
+        {added ? <CheckIcon size={16} /> : null}
+        {added ? "Añadida" : "Añadir"}
+      </span>
+    </button>
   );
 }
