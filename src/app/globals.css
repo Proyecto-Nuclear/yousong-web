@@ -1267,6 +1267,71 @@
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
+  /* Search results: YouTube-style row with a 16:9 thumbnail */
+  .song-list {
+    min-width: 0;
+    container-type: inline-size;
+  }
+  .song-row--result {
+    grid-template-columns: var(--thumb-w) minmax(0, 1fr) auto;
+    align-items: start;
+    contain-intrinsic-size: auto 112px;
+    --thumb-w: 168px;
+  }
+  .song-row--result > * {
+    min-width: 0;
+  }
+  .song-thumb {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: var(--r-control);
+    background: var(--raised);
+  }
+  .song-thumb__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .song-thumb--fallback {
+    display: grid;
+    place-items: center;
+  }
+  .song-thumb__time {
+    position: absolute;
+    right: var(--s2);
+    bottom: var(--s2);
+    padding: 1px var(--s2);
+    border-radius: var(--r-control);
+    background: rgb(0 0 0 / 0.82);
+    color: #fff;
+    font-size: var(--fs-12);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+  }
+  .song-result__text {
+    display: grid;
+    gap: 2px;
+  }
+  .song-row__meta--soft {
+    font-size: var(--fs-12);
+  }
+  .song-result__action {
+    align-self: center;
+  }
+  /* Respond to the width of the list itself: it is a narrow column beside the draft on wide screens */
+  @container (max-width: 520px) {
+    .song-row--result {
+      --thumb-w: 112px;
+      grid-template-columns: var(--thumb-w) minmax(0, 1fr);
+    }
+    .song-result__action {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+    }
+  }
   .suggestions {
     display: flex;
     flex-wrap: wrap;
