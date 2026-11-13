@@ -20,6 +20,8 @@ try {
       "--esModuleInterop",
       "--skipLibCheck",
       "--strict",
+      "--jsx",
+      "react-jsx",
       "tests/admin-api.test.ts",
       "tests/auth.test.ts",
       "tests/demo.test.ts",
