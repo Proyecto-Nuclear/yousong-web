@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { SearchPage, Song } from "../../lib/admin-api";
 import type { DemoApi } from "../../lib/demo-api";
 import { SUGGESTION, type Suggestions } from "../../lib/demo-contracts";
+import { formatDuration, songMeta } from "../../lib/format";
 import { ownerError } from "../../lib/owner-copy";
-import { OperationStatus, useDemoOperation } from "./operation";
+import { Cover } from "../cover";
+import { CheckIcon, SearchIcon } from "../icons";
+import { ErrorCallout, Loading } from "./feedback";
+import { useOwnerOperation } from "./operation";
 
 export function CatalogPicker({
   api,
@@ -21,8 +25,9 @@ export function CatalogPicker({
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
   const [suggestionError, setSuggestionError] = useState("");
   const [page, setPage] = useState<SearchPage | null>(null);
-  const op = useDemoOperation();
+  const op = useOwnerOperation();
   const revision = useRef(0);
+  const hintId = useId();
   useEffect(() => {
     let cancelled = false;
     const version = revision.current;
@@ -65,48 +70,59 @@ export function CatalogPicker({
       });
     });
   }
+  const full = selected.length >= 200;
   return (
-    <div className="demo-catalog">
-      <h3>Añadir canciones</h3>
+    <div className="stack" aria-busy={op.busy}>
+      <h3 className="card__subtitle">Añadir canciones</h3>
       <form
+        className="field-row"
         onSubmit={(event) => {
           event.preventDefault();
           search();
         }}
       >
-        <label>
-          Buscar título o artista (2–100 caracteres)
+        <label className="field">
+          <span className="field__label">Buscar por título o artista</span>
           <input
+            className="input"
+            type="search"
             value={query}
             minLength={2}
             maxLength={100}
             required
             disabled={op.busy}
+            aria-describedby={hintId}
             onChange={(event) => changeQuery(event.target.value)}
           />
         </label>
-        <button type="submit" disabled={op.busy}>
-          Buscar en catálogo
+        <button type="submit" className="btn" disabled={op.busy}>
+          <SearchIcon size={20} />
+          Buscar
         </button>
+        <p id={hintId} className="field__hint">
+          Escribe al menos 2 letras. Añadir una canción solo cambia tu borrador.
+        </p>
       </form>
-      {suggestionError && <p role="alert">{suggestionError}</p>}
-      {suggestions && (
-        <ul aria-label="Sugerencias">
+      {suggestionError && <ErrorCallout error={suggestionError} />}
+      {suggestions && suggestions.sugerencias.length > 0 && (
+        <ul className="suggestions" aria-label="Sugerencias">
           {suggestions.sugerencias.map((item) => (
             <li key={`${item.tipo}:${item.texto}`}>
               {item.tipo === SUGGESTION.SONG && onPick ? (
                 <button
                   type="button"
-                  disabled={
-                    selected.includes(item.cancion.videoId) ||
-                    selected.length >= 200
-                  }
+                  className="suggestion"
+                  disabled={selected.includes(item.cancion.videoId) || full}
                   onClick={() => onPick(item.cancion)}
                 >
                   Añadir {item.texto}
                 </button>
               ) : (
-                <button type="button" onClick={() => changeQuery(item.texto)}>
+                <button
+                  type="button"
+                  className="suggestion"
+                  onClick={() => changeQuery(item.texto)}
+                >
                   {item.texto}
                 </button>
               )}
@@ -114,54 +130,61 @@ export function CatalogPicker({
           ))}
         </ul>
       )}
-      <OperationStatus {...op} />
+      {op.busy && <Loading label="Buscando…" />}
+      {op.error && <ErrorCallout error={op.error} />}
       {page && (
         <>
-          <output>
+          <p className="status-line">
             {page.resultados.length
               ? `Resultados para «${searched}»`
-              : "No se encontraron canciones."}
-          </output>
-          <ul className="songs">
-            {page.resultados.map((song) => (
-              <li key={song.videoId}>
-                <div>
-                  <h3>{song.titulo}</h3>
-                  <p>
-                    {song.artista}
-                    {song.artistaVerificado ? " · Artista verificado" : ""} ·
-                    Canal: {song.canal}
-                  </p>
-                  <p>
-                    {song.duracionSegundos === null
-                      ? "Duración no disponible"
-                      : `${song.duracionSegundos} s`}
-                  </p>
+              : `No encontramos canciones para «${searched}». Prueba con otro título o artista.`}
+          </p>
+          <ul className="song-list" aria-label="Resultados de la búsqueda">
+            {page.resultados.map((song) => {
+              const added = selected.includes(song.videoId);
+              return (
+                <li key={song.videoId} className="song-row">
+                  <Cover title={song.titulo} size={40} />
+                  <div>
+                    <p className="song-row__title">{song.titulo}</p>
+                    <p className="song-row__meta">
+                      {formatDuration(song.duracionSegundos) === null
+                        ? `${song.artista} · Duración no disponible`
+                        : songMeta(song.artista, song.duracionSegundos)}
+                      {song.artistaVerificado ? " · Artista verificado" : ""}
+                      {song.canal && song.canal !== song.artista
+                        ? ` · Canal: ${song.canal}`
+                        : ""}
+                    </p>
+                  </div>
                   {onPick && (
                     <button
                       type="button"
-                      disabled={
-                        selected.includes(song.videoId) ||
-                        selected.length >= 200
+                      className="btn btn--small"
+                      disabled={added || full}
+                      aria-label={
+                        added
+                          ? `${song.titulo} ya está en tu lista`
+                          : `Añadir ${song.titulo} a la lista`
                       }
                       onClick={() => onPick(song)}
                     >
-                      {selected.includes(song.videoId)
-                        ? "Añadida"
-                        : "Añadir a la lista"}
+                      {added ? <CheckIcon size={18} /> : null}
+                      {added ? "Añadida" : "Añadir"}
                     </button>
                   )}
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
           {page.siguientePagina && (
             <button
               type="button"
+              className="btn"
               disabled={op.busy}
               onClick={() => search(page.siguientePagina ?? undefined)}
             >
-              Siguiente página
+              Ver más resultados
             </button>
           )}
         </>
