@@ -2,6 +2,28 @@
 
 import { type ReactNode, useEffect, useId, useRef } from "react";
 
+type DialogLike = Pick<HTMLDialogElement, "open" | "showModal" | "close">;
+
+/** Keeps the native dialog in step with the `open` prop (idempotent). */
+export function syncDialog(dialog: DialogLike | null, open: boolean) {
+  if (!dialog) return;
+  if (open && !dialog.open) dialog.showModal();
+  if (!open && dialog.open) dialog.close();
+}
+
+/**
+ * Escape fires `cancel`. The native close is always prevented so the parent
+ * stays the single owner of `open`; while busy, Escape does nothing.
+ */
+export function cancelDialog(
+  event: { preventDefault: () => void },
+  busy: boolean,
+  onCancel: () => void,
+) {
+  event.preventDefault();
+  if (!busy) onCancel();
+}
+
 // Modal confirmation built on <dialog>.showModal(): the browser traps focus,
 // makes the rest of the page inert and closes on Escape (reported as cancel).
 export function ConfirmDialog({
@@ -28,22 +50,14 @@ export function ConfirmDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const textId = useId();
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
+  useEffect(() => syncDialog(ref.current, open), [open]);
   return (
     <dialog
       ref={ref}
       className="dialog"
       aria-labelledby={titleId}
       aria-describedby={textId}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onCancel();
-      }}
+      onCancel={(event) => cancelDialog(event, busy, onCancel)}
     >
       <h2 id={titleId} className="dialog__title">
         {title}

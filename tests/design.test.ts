@@ -119,10 +119,12 @@ test("end-session dialog is a labelled native dialog naming the consequence", ()
   assert.match(html, /aria-describedby="[^"]+"/);
   assert.match(html, /perderán el acceso/);
   assert.match(html, /btn--danger[^>]*>Finalizar sesión</);
+  // Only the safe choice carries autofocus (showModal focuses it).
   assert.match(
     html,
-    /autofocus=""[^>]*>Seguir con la sesión|Seguir con la sesión/,
+    /<button[^>]*autofocus=""[^>]*>Seguir con la sesión<\/button>/,
   );
+  assert.equal((html.match(/autofocus=""/g) ?? []).length, 1);
 });
 
 test("toasts live in one polite status region and are dismissible", () => {
@@ -202,15 +204,14 @@ test("theme preference persists, clears and survives broken storage", () => {
   assert.ok(THEME_BOOT_SCRIPT.includes(THEME_KEY));
 });
 
-test("time zones list friendly names with Bogotá first and keep unknown saved values", () => {
+test("time zones list friendly names with Bogotá first", () => {
   assert.deepEqual(TIME_ZONES[0], {
     value: "America/Bogota",
     label: "Colombia (Bogotá)",
   });
   assert.ok(!TIME_ZONES.some((zone) => /IANA|_/.test(zone.label)));
-  const options = timeZoneOptions("Asia/Tokyo");
-  assert.equal(options.at(-1)?.value, "Asia/Tokyo");
-  assert.equal(timeZoneOptions("America/Lima").length, TIME_ZONES.length);
+  // Zones outside the list go through "Otra zona (IANA)" (tests/owner-ui).
+  assert.equal(timeZoneOptions().length, TIME_ZONES.length + 1);
 });
 
 test("generated covers are deterministic and decorative", () => {
