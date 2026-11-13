@@ -75,7 +75,7 @@ export function ThemeControls() {
       </button>
       <button
         type="button"
-        className="btn btn--ghost btn--icon hide-xs"
+        className="btn btn--ghost btn--icon"
         aria-label="Seguir el tema del dispositivo"
         aria-pressed={followsSystem}
         onClick={() => {

@@ -35,4 +35,4 @@ export function resolveTheme(stored: Theme | null, prefersLight: boolean) {
 
 // Runs before first paint (inlined in <head>) so the page never flashes the
 // wrong theme. Kept dependency-free and wrapped in try/catch.
-export const THEME_BOOT_SCRIPT = `(function(){try{var s=null;try{s=localStorage.getItem("${THEME_KEY}")}catch(e){}var t=s==="light"||s==="dark"?s:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t;if(s)document.documentElement.dataset.themeSource="user"}catch(e){}})();`;
+export const THEME_BOOT_SCRIPT = `(function(){try{var s=null;try{s=localStorage.getItem("${THEME_KEY}")}catch(e){}var u=s==="light"||s==="dark";var t=u?s:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t;if(u)document.documentElement.dataset.themeSource="user"}catch(e){}})();`;
