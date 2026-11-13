@@ -12,14 +12,31 @@ function loopback(url: string) {
   }
 }
 
+/**
+ * The preview keeps the SVG type because <img> never runs SVG scripts. The
+ * download blob is octet-stream so opening its blob: URL in this origin can
+ * never render (and execute) the server-provided SVG as a document.
+ */
+export function qrBlobs(svg: string) {
+  return {
+    preview: new Blob([svg], { type: "image/svg+xml" }),
+    download: new Blob([svg], { type: "application/octet-stream" }),
+  };
+}
+
 export function QrCard({ qr }: { qr: Qr }) {
   const [source, setSource] = useState("");
+  const [download, setDownload] = useState("");
   useEffect(() => {
-    const url = URL.createObjectURL(
-      new Blob([qr.svg], { type: "image/svg+xml" }),
-    );
-    setSource(url);
-    return () => URL.revokeObjectURL(url);
+    const blobs = qrBlobs(qr.svg);
+    const preview = URL.createObjectURL(blobs.preview);
+    const file = URL.createObjectURL(blobs.download);
+    setSource(preview);
+    setDownload(file);
+    return () => {
+      URL.revokeObjectURL(preview);
+      URL.revokeObjectURL(file);
+    };
   }, [qr]);
   return (
     <div className="qr-card">
@@ -50,8 +67,8 @@ export function QrCard({ qr }: { qr: Qr }) {
         </p>
       )}
       <div className="cluster cluster--center">
-        {source && (
-          <a className="btn" href={source} download="yousong-qr.svg">
+        {download && (
+          <a className="btn" href={download} download="yousong-qr.svg">
             <DownloadIcon size={20} />
             Descargar QR
           </a>

@@ -102,6 +102,7 @@ function AdminPanelContent({
   const generation = useRef(0);
   const pending = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(
     () => () => {
       generation.current++;
@@ -233,6 +234,10 @@ function AdminPanelContent({
         if (version !== generation.current) return;
         setSession(null);
         setClosing(false);
+        // The button that opened the dialog disappears with the session, so
+        // the dialog cannot restore focus to it; move focus to the heading
+        // after React has closed the dialog (next frame).
+        requestAnimationFrame(() => headingRef.current?.focus());
         say(
           result.pendientesAlCierre
             ? `Sesión finalizada. Quedaron ${plural(result.pendientesAlCierre, "solicitud", "solicitudes")} sin sonar.`
@@ -345,7 +350,7 @@ function AdminPanelContent({
         </a>
         {selected && (
           <span className="venue">
-            <span className="venue__icon">
+            <span className="venue__icon hide-xs">
               <HeadphonesIcon size={18} />
             </span>
             <span className="venue__name">{selected.nombre}</span>
@@ -407,7 +412,9 @@ function AdminPanelContent({
           {connected && (
             <div className="page-head">
               <div>
-                <h1 className="page-head__title">{view}</h1>
+                <h1 ref={headingRef} className="page-head__title" tabIndex={-1}>
+                  {view}
+                </h1>
                 <p className="page-head__subtitle">
                   {OWNER_VIEW_SUBTITLE[view]}
                 </p>

@@ -32,6 +32,8 @@ const MESSAGES = {
     "La búsqueda de canciones no está disponible. Contacta con soporte.",
   catalogBusy:
     "No pudimos buscar canciones ahora. Intenta de nuevo en unos minutos.",
+  songUnavailable:
+    "Esa canción no está disponible en el catálogo. Prueba con otra.",
   budget:
     "Se agotaron las búsquedas de hoy para tu local. Vuelve a intentarlo mañana.",
   queueEmpty: "No hay canciones para sonar. Añade canciones a tu lista.",
@@ -80,6 +82,7 @@ export function ownerError(reason: unknown): string {
     [/credencial|caducad|autentic/i, MESSAGES.signIn],
     [/catálogo.*configurado/i, MESSAGES.catalogMissing],
     [/presupuesto de búsquedas/i, MESSAGES.budget],
+    [/una canción no está disponible/i, MESSAGES.songUnavailable],
     [/catálogo|cuota/i, MESSAGES.catalogBusy],
     [/cola.*vacía|no tienen canciones disponibles/i, MESSAGES.queueEmpty],
     [/curso/i, MESSAGES.playing],

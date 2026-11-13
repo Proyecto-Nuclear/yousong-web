@@ -1,10 +1,15 @@
 "use client";
 
 import { useId, useState } from "react";
-import type { Establishment } from "@/lib/admin-api";
-import type { DemoApi } from "@/lib/demo-api";
-import { slug as validSlug } from "@/lib/demo-contracts";
-import { timeZoneOptions } from "@/lib/time-zones";
+import type { Establishment } from "../../lib/admin-api";
+import type { DemoApi } from "../../lib/demo-api";
+import { slug as validSlug } from "../../lib/demo-contracts";
+import {
+  isValidTimeZone,
+  OTHER_TIME_ZONE,
+  timeZoneChoice,
+  timeZoneOptions,
+} from "../../lib/time-zones";
 import { OperationStatus, useOwnerOperation } from "./operation";
 
 export function EstablishmentForm({
@@ -17,7 +22,10 @@ export function EstablishmentForm({
   onSaved: (value: Establishment) => void;
 }) {
   const [name, setName] = useState(current?.nombre ?? "");
-  const [zone, setZone] = useState(current?.zonaHoraria ?? "America/Bogota");
+  const initialZone = timeZoneChoice(current?.zonaHoraria);
+  const [zoneChoice, setZoneChoice] = useState(initialZone.choice);
+  const [customZone, setCustomZone] = useState(initialZone.custom);
+  const [zoneTried, setZoneTried] = useState(false);
   const [slug, setSlug] = useState("");
   const [active, setActive] = useState(current?.activo ?? true);
   const op = useOwnerOperation();
@@ -27,9 +35,16 @@ export function EstablishmentForm({
     slug: useId(),
     slugError: useId(),
     zone: useId(),
+    customZone: useId(),
+    zoneHint: useId(),
+    zoneError: useId(),
     active: useId(),
   };
   const slugInvalid = slug.length > 0 && !validSlug(slug);
+  const otherZone = zoneChoice === OTHER_TIME_ZONE;
+  const zone = otherZone ? customZone.trim() : zoneChoice;
+  const zoneInvalid =
+    otherZone && (customZone.length > 0 || zoneTried) && !isValidTimeZone(zone);
   return (
     <div className="stack">
       {!current && (
@@ -45,7 +60,8 @@ export function EstablishmentForm({
         className="form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (slugInvalid) return;
+          setZoneTried(true);
+          if (slugInvalid || !isValidTimeZone(zone)) return;
           void op.run(async (commit) => {
             if (uncertain) return;
             let saved: Establishment;
@@ -98,17 +114,49 @@ export function EstablishmentForm({
             <select
               id={ids.zone}
               className="select"
-              value={zone}
-              onChange={(event) => setZone(event.target.value)}
+              value={zoneChoice}
+              onChange={(event) => setZoneChoice(event.target.value)}
               required
             >
-              {timeZoneOptions(current?.zonaHoraria).map((option) => (
+              {timeZoneOptions().map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
           </div>
+          {otherZone && (
+            <div className="field">
+              <label className="field__label" htmlFor={ids.customZone}>
+                Zona horaria (IANA)
+              </label>
+              <input
+                id={ids.customZone}
+                className="input"
+                value={customZone}
+                onChange={(event) => setCustomZone(event.target.value)}
+                required
+                maxLength={64}
+                autoCapitalize="none"
+                spellCheck={false}
+                aria-invalid={zoneInvalid}
+                aria-describedby={
+                  zoneInvalid
+                    ? `${ids.zoneError} ${ids.zoneHint}`
+                    : ids.zoneHint
+                }
+              />
+              <p id={ids.zoneHint} className="field__hint">
+                Escribe el nombre de la zona tal como lo usa tu sistema, por
+                ejemplo America/Chicago o Europe/London.
+              </p>
+              {zoneInvalid && (
+                <p id={ids.zoneError} className="field__error">
+                  Escribe una zona válida, por ejemplo America/Chicago.
+                </p>
+              )}
+            </div>
+          )}
           {!current && (
             <div className="field">
               <label className="field__label" htmlFor={ids.slug}>

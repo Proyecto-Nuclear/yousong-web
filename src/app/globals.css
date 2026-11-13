@@ -247,7 +247,8 @@
     min-width: 0;
     padding: var(--s6) var(--s7) var(--s7);
   }
-  .main:focus {
+  .main:focus,
+  .page-head__title:focus:not(:focus-visible) {
     outline: none;
   }
   .content {

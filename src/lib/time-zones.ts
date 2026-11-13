@@ -29,11 +29,37 @@ export const TIME_ZONES: readonly { value: string; label: string }[] = [
   { value: "Europe/Madrid", label: "España (Madrid)" },
 ];
 
-/** Known choices plus the saved value when it is not in the curated list. */
-export function timeZoneOptions(current?: string) {
-  if (!current || TIME_ZONES.some((zone) => zone.value === current))
-    return TIME_ZONES;
-  return [...TIME_ZONES, { value: current, label: current }];
+/** Select value that reveals a free IANA input for zones outside the list. */
+export const OTHER_TIME_ZONE = "__other__";
+
+/** Curated choices followed by the "Otra zona (IANA)" escape hatch. */
+export function timeZoneOptions() {
+  return [...TIME_ZONES, { value: OTHER_TIME_ZONE, label: "Otra zona (IANA)" }];
+}
+
+/** Splits a saved zone into the select value and the free-text value. */
+export function timeZoneChoice(current: string | undefined) {
+  const zone = current ?? TIME_ZONES[0].value;
+  return TIME_ZONES.some((item) => item.value === zone)
+    ? { choice: zone, custom: "" }
+    : { choice: OTHER_TIME_ZONE, custom: zone };
+}
+
+let supported: Set<string> | null = null;
+/** True for identifiers the runtime knows (Intl.supportedValuesOf) and UTC. */
+export function isValidTimeZone(value: string) {
+  if (!value || value !== value.trim()) return false;
+  if (value === "UTC") return true;
+  if (typeof Intl.supportedValuesOf === "function") {
+    supported ??= new Set(Intl.supportedValuesOf("timeZone"));
+    return supported.has(value);
+  }
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return value.includes("/");
+  } catch {
+    return false;
+  }
 }
 
 export function timeZoneLabel(value: string) {
