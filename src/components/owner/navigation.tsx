@@ -22,13 +22,15 @@ export function OwnerNavigation({
     <nav className="sidebar__nav" aria-labelledby="nav-label">
       {Object.values(VIEW).map((name) => {
         const NavIcon = VIEW_ICON[name];
+        const shortName = OWNER_VIEW_SHORT[name];
+        const label = name.includes(shortName) ? name : `${shortName}: ${name}`;
         return (
           <button
             key={name}
             type="button"
             className="nav-item"
             data-view={name}
-            aria-label={name}
+            aria-label={label}
             aria-current={view === name ? "page" : undefined}
             onClick={() => onNavigate(name)}
           >

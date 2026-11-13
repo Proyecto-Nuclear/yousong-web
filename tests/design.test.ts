@@ -22,7 +22,11 @@ import {
   votesLabel,
   waitLabel,
 } from "../src/lib/format";
-import { OWNER_VIEWS, ownerError } from "../src/lib/owner-copy";
+import {
+  OWNER_VIEW_SHORT,
+  OWNER_VIEWS,
+  ownerError,
+} from "../src/lib/owner-copy";
 import {
   readTheme,
   resolveTheme,
@@ -45,7 +49,12 @@ test("responsive navigation retains accessible names independently of hidden lab
     const buttons = [...html.matchAll(/<button\b[^>]*>/g)].map(([tag]) => tag);
     assert.equal(buttons.length, Object.values(OWNER_VIEWS).length);
     for (const [index, name] of Object.values(OWNER_VIEWS).entries()) {
-      assert.equal(buttons[index].match(/\baria-label="([^"]*)"/)?.[1], name);
+      const label = buttons[index].match(/\baria-label="([^"]*)"/)?.[1] ?? "";
+      assert.ok(label.includes(name), `Missing full view name: ${name}`);
+      assert.ok(
+        label.includes(OWNER_VIEW_SHORT[name]),
+        `Missing visible mobile label: ${OWNER_VIEW_SHORT[name]}`,
+      );
       assert.equal(
         buttons[index].includes('aria-current="page"'),
         name === view,
