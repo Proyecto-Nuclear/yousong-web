@@ -184,7 +184,7 @@ export function CatalogPicker({
               disabled={op.busy}
               onClick={() => search(page.siguientePagina ?? undefined)}
             >
-              Ver más resultados
+              Siguiente página
             </button>
           )}
         </>

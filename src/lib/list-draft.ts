@@ -58,7 +58,15 @@ export class ListDraft {
     for (const listener of this.listeners) listener();
   }
   enter() {
+    const wasDisposed = this.disposed;
     this.disposed = false;
+    // A dispose() during an in-flight read/save fenced its completion, so
+    // busy/uncertain would stay stuck; clear busy and reconcile with a read.
+    if (wasDisposed && this.state.busy) {
+      this.update({ busy: false });
+      void this.refresh();
+      return;
+    }
     if (!this.state.loaded) void this.refresh();
   }
   dispose() {
