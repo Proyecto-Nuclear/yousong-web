@@ -2,9 +2,13 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ListConfiguration } from "../src/components/demo/list-configuration";
-import { OperationStatus } from "../src/components/demo/operation";
-import { QueuePanel, QueueSongs } from "../src/components/demo/queue-panel";
+import { ListConfiguration } from "../src/components/owner/list-configuration";
+import { OperationStatus } from "../src/components/owner/operation";
+import {
+  NowPlaying,
+  QueuePanel,
+  QueueSongs,
+} from "../src/components/owner/queue-panel";
 import { proxyRequest } from "../src/lib/bff";
 import { DemoApi } from "../src/lib/demo-api";
 import {
@@ -99,16 +103,16 @@ test("owner copy preserves session distinctions and hides unexpected diagnostic 
   assert.deepEqual(
     ["ABIERTA", "PAUSADA", "CERRANDO", "CERRADA", "unknown"].map(sessionNotice),
     [
-      "Sesión abierta",
-      "Sesión pausada",
+      "Sesión activa",
+      "Sesión en pausa",
       "Finalizando sesión",
       "Sesión finalizada",
-      "Estado sin confirmar",
+      "Estado por confirmar",
     ],
   );
   assert.equal(
     ownerError(Error("private diagnostic")),
-    "No pudimos confirmar la operación. Revisa el estado antes de intentarlo otra vez.",
+    "No pudimos confirmar la acción. Actualiza el estado antes de intentarlo otra vez.",
   );
 });
 
@@ -235,8 +239,15 @@ test("operational panel preserves explicit next/end controls while prerender per
       showPlaybackControls: true,
     }),
   );
-  assert.match(html, />Siguiente<\/button>/);
-  assert.match(html, />Finalizar<\/button>/);
+  // Playback actions are named so nobody confuses them with ending the session.
+  assert.match(html, />Siguiente canción<\/button>/);
+  assert.match(html, />Terminar canción<\/button>/);
+  assert.doesNotMatch(html, />Finalizar<\/button>|Al finalizar/);
+  assert.match(
+    html,
+    /<legend[^>]*>Cómo terminó la canción que suena<\/legend>/,
+  );
+  assert.equal((html.match(/type="radio"/g) ?? []).length, 3);
   for (const text of ["Completada", "Saltada", "Fallida"])
     assert.ok(html.includes(text));
   assert.equal(requests, 0);
@@ -336,14 +347,15 @@ test("queue song rows show actual current track, votes and wait without diagnost
   const html = renderToStaticMarkup(
     createElement(QueueSongs, { snapshot: value }),
   );
-  for (const text of [
-    "Current track",
-    "En reproducción",
-    "Tema",
-    "1 votos",
-    "0 min aprox.",
-  ])
-    assert.ok(html.includes(text));
+  for (const text of ["Tema", "1 voto<", "Sin espera", ">01<", "Artista"])
+    assert.ok(html.includes(text), text);
+  assert.doesNotMatch(html, /1 votos|min aprox/);
+  const playing = renderToStaticMarkup(
+    createElement(NowPlaying, { playing: value.enReproduccion }),
+  );
+  for (const text of ["Current track", "En reproducción", "eq--on"])
+    assert.ok(playing.includes(text), text);
+  assert.doesNotMatch(playing, /2026-|Versión|servidor|backend|<button/);
   assert.doesNotMatch(html, /2026-|Versión|servidor|backend|<button|<select/);
 });
 
@@ -484,8 +496,10 @@ test("music queue is a concise read-only song view before automatic hydration", 
       session: null,
     }),
   );
-  assert.match(html, /Cola musical/);
+  assert.match(html, /Cola en vivo/);
   assert.match(html, /Actualización automática/);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /El local está preparando la música/);
   assert.doesNotMatch(
     html,
     /<button|<select|servidor|backend|Versión|Actualizar cola/,
