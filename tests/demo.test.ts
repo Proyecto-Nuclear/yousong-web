@@ -1,8 +1,497 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ListConfiguration } from "../src/components/demo/list-configuration";
+import { OperationStatus } from "../src/components/demo/operation";
+import { QueuePanel, QueueSongs } from "../src/components/demo/queue-panel";
 import { proxyRequest } from "../src/lib/bff";
 import { DemoApi } from "../src/lib/demo-api";
+import {
+  type DefaultList,
+  type Queue,
+  ROTATION,
+} from "../src/lib/demo-contracts";
 import { OperationGate } from "../src/lib/demo-operation";
+import { ListDraft } from "../src/lib/list-draft";
+import { OWNER_VIEWS, ownerError, sessionNotice } from "../src/lib/owner-copy";
+import {
+  type RefreshClock,
+  refreshQueue,
+  startQueueRefresh,
+} from "../src/lib/queue-refresh";
+
+test("owner navigation keeps one place to search and save the local list", () => {
+  assert.deepEqual(Object.values(OWNER_VIEWS), [
+    "Panel operativo",
+    "Sesión y QR",
+    "Cola musical",
+    "Configuración y listas",
+  ]);
+});
+
+test("list workspace keeps search and save together without prerender reads or nested forms", () => {
+  let requests = 0;
+  const api = new DemoApi(async () => {
+    requests++;
+    throw Error("unexpected request");
+  });
+  for (const active of [false, true]) {
+    const html = renderToStaticMarkup(
+      createElement(ListConfiguration, {
+        api,
+        establishmentId: id,
+        canManage: true,
+        active,
+      }),
+    );
+    assert.match(html, /Añadir canciones/);
+    assert.doesNotMatch(
+      html,
+      /backend|servidor|Consultar lista e historial|Publicar nueva versión/,
+    );
+    assert.match(html, /Guardar lista/);
+    assert.doesNotMatch(html, /Guarda tu lista en Configuración/);
+    assert.equal(/hidden=""/.test(html), !active);
+    const tags = html.match(/<\/?form\b[^>]*>/g) ?? [];
+    let depth = 0;
+    for (const tag of tags) {
+      depth += tag.startsWith("</") ? -1 : 1;
+      assert.ok(depth <= 1);
+    }
+    assert.equal(depth, 0);
+  }
+  assert.equal(requests, 0);
+});
+
+test("read-only list scope preserves current-list reads without history or writes", async () => {
+  const calls: string[] = [];
+  const model = new ListDraft(
+    {
+      async currentList() {
+        calls.push("current");
+        return list as DefaultList;
+      },
+      async listHistory() {
+        calls.push("history");
+        return [];
+      },
+      async publishList() {
+        calls.push("WRITE");
+        return list as DefaultList;
+      },
+    },
+    id,
+    false,
+  );
+  model.enter();
+  await settle();
+  const before = model.getSnapshot();
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  await model.publish();
+  assert.deepEqual(calls, ["current"]);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.current?.version, 1);
+  model.dispose();
+});
+
+test("owner copy preserves session distinctions and hides unexpected diagnostic text", () => {
+  assert.deepEqual(
+    ["ABIERTA", "PAUSADA", "CERRANDO", "CERRADA", "unknown"].map(sessionNotice),
+    [
+      "Sesión abierta",
+      "Sesión pausada",
+      "Finalizando sesión",
+      "Sesión finalizada",
+      "Estado sin confirmar",
+    ],
+  );
+  assert.equal(
+    ownerError(Error("private diagnostic")),
+    "No pudimos confirmar la operación. Revisa el estado antes de intentarlo otra vez.",
+  );
+});
+
+test("owner progress and errors avoid technical diagnostics", () => {
+  const busy = renderToStaticMarkup(
+    createElement(OperationStatus, { busy: true, error: "", notice: "" }),
+  );
+  assert.match(busy, /Cargando…/);
+  assert.doesNotMatch(busy, /servidor|backend|API/);
+  const error = renderToStaticMarkup(
+    createElement(OperationStatus, {
+      busy: false,
+      error: "No tienes permisos para esta operación en el backend.",
+      notice: "",
+    }),
+  );
+  assert.match(error, /permisos/);
+  assert.doesNotMatch(error, /backend/);
+  const notice = renderToStaticMarkup(
+    createElement(OperationStatus, {
+      busy: false,
+      error: "",
+      notice: "Lista guardada",
+    }),
+  );
+  assert.match(notice, /Lista guardada/);
+});
+
+const settle = async () => {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+};
+
+test("automatic queue reads retain last good rows on failure and accept same-version service changes", async () => {
+  const gate = new OperationGate();
+  let visible: Queue | null = null;
+  let confirmed = false;
+  const h = apiHarness([
+    snapshot,
+    { ...snapshot, estado: "PAUSADO" },
+    { ...snapshot, colaVersion: 1 },
+  ]);
+  async function run(read = () => h.api.queue("sala")) {
+    const ticket = gate.begin();
+    assert.ok(ticket !== null);
+    await refreshQueue({
+      read,
+      gate,
+      commit(update) {
+        if (gate.valid(ticket)) update();
+      },
+      accept(value) {
+        visible = value;
+        confirmed = true;
+      },
+      stale() {
+        confirmed = false;
+      },
+    });
+    gate.end(ticket);
+  }
+  await run();
+  assert.equal(confirmed, true);
+  await run();
+  assert.equal(confirmed, true);
+  const paused = visible;
+  assert.equal((paused as Queue | null)?.estado, "PAUSADO");
+  await run();
+  assert.equal(confirmed, false);
+  assert.equal(visible, paused);
+  await run(async () => {
+    throw Error("offline");
+  });
+  assert.equal(confirmed, false);
+  assert.equal(visible, paused);
+  assert.equal(h.calls.length, 3);
+  assert.ok(h.calls.every((call) => call.options.method === "GET"));
+});
+
+test("disposal fences in-flight queue results and prevents follow-up reads", async () => {
+  const gate = new OperationGate();
+  const ticket = gate.begin();
+  assert.ok(ticket !== null);
+  let resolve: (value: Queue) => void = () => {};
+  let reads = 0;
+  let updates = 0;
+  const options = {
+    gate,
+    read() {
+      reads++;
+      return new Promise<Queue>((done) => {
+        resolve = done;
+      });
+    },
+    commit(update: () => void) {
+      if (gate.valid(ticket)) update();
+    },
+    accept() {
+      updates++;
+    },
+    stale() {
+      updates++;
+    },
+  };
+  const pending = refreshQueue(options);
+  gate.invalidate();
+  resolve({ ...snapshot, estado: "ABIERTO" });
+  await pending;
+  await refreshQueue(options);
+  assert.equal(reads, 1);
+  assert.equal(updates, 0);
+});
+
+test("operational panel preserves explicit next/end controls while prerender performs no writes", () => {
+  let requests = 0;
+  const api = new DemoApi(async () => {
+    requests++;
+    throw Error("unexpected request");
+  });
+  const html = renderToStaticMarkup(
+    createElement(QueuePanel, {
+      api,
+      establishment,
+      session: null,
+      showPlaybackControls: true,
+    }),
+  );
+  assert.match(html, />Siguiente<\/button>/);
+  assert.match(html, />Finalizar<\/button>/);
+  for (const text of ["Completada", "Saltada", "Fallida"])
+    assert.ok(html.includes(text));
+  assert.equal(requests, 0);
+});
+
+test("draft preserves unique ordered 200-song limit, removal and no writes from catalog picks", async () => {
+  let writes = 0;
+  const model = new ListDraft(
+    {
+      async currentList() {
+        return null;
+      },
+      async listHistory() {
+        return [];
+      },
+      async publishList() {
+        writes++;
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  const selected = Array.from({ length: 201 }, (_, i) => ({
+    ...song,
+    canal: "Channel",
+    videoId: String(i).padStart(11, "0"),
+  }));
+  for (const value of selected) model.pick(value);
+  const before = model.getSnapshot();
+  model.pick(selected[0]);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.songs.length, 200);
+  assert.deepEqual(
+    before.songs.map((value) => value.videoId),
+    selected.slice(0, 200).map((value) => value.videoId),
+  );
+  model.remove(selected[0].videoId);
+  model.pick(selected[200]);
+  assert.equal(model.getSnapshot().songs.length, 200);
+  assert.equal(model.getSnapshot().songs[199].videoId, selected[200].videoId);
+  assert.equal(writes, 0);
+  model.dispose();
+});
+
+test("queue reads immediately, serially after completion, and stops on disposal", async () => {
+  let reads = 0;
+  let complete: () => void = () => {};
+  const tasks: (() => void)[] = [];
+  const delays: number[] = [];
+  const clock: RefreshClock = {
+    schedule(task, delay) {
+      tasks.push(task);
+      delays.push(delay);
+      return task;
+    },
+    cancel() {
+      tasks.length = 0;
+    },
+  };
+  const stop = startQueueRefresh(() => {
+    reads++;
+    return new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+  }, clock);
+  assert.equal(reads, 1);
+  assert.equal(tasks.length, 0, "no overlapping read while pending");
+  complete();
+  await settle();
+  assert.deepEqual(delays, [6000]);
+  const next = tasks.pop();
+  assert.ok(next);
+  next();
+  assert.equal(reads, 2);
+  stop();
+  complete();
+  await settle();
+  assert.equal(tasks.length, 0);
+  assert.deepEqual(delays, [6000]);
+  assert.equal(reads, 2);
+});
+
+test("queue song rows show actual current track, votes and wait without diagnostics", () => {
+  const value: Queue = {
+    ...snapshot,
+    estado: "ABIERTO",
+    enReproduccion: {
+      solicitudId: null,
+      cancion: { ...song, titulo: "Current track" },
+      iniciadaAt: establishment.creadoAt,
+      restanteSegundos: 15,
+    },
+  };
+  const html = renderToStaticMarkup(
+    createElement(QueueSongs, { snapshot: value }),
+  );
+  for (const text of [
+    "Current track",
+    "En reproducción",
+    "Tema",
+    "1 votos",
+    "0 min aprox.",
+  ])
+    assert.ok(html.includes(text));
+  assert.doesNotMatch(html, /2026-|Versión|servidor|backend|<button|<select/);
+});
+
+test("list entry automatically loads current/history and initializes one editable draft without publishing", async () => {
+  const calls: string[] = [];
+  const model = new ListDraft(
+    {
+      async currentList() {
+        calls.push("current");
+        return list as DefaultList;
+      },
+      async listHistory() {
+        calls.push("history");
+        return [];
+      },
+      async publishList() {
+        calls.push("WRITE");
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  assert.deepEqual(calls, ["current", "history"]);
+  assert.equal(model.getSnapshot().songs[0].videoId, song.videoId);
+  assert.equal(model.getSnapshot().name, "General");
+  model.edit({ name: "My changes", rotation: ROTATION.RANDOM });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  model.enter();
+  await settle();
+  assert.equal(model.getSnapshot().songs.length, 2);
+  assert.equal(model.getSnapshot().name, "My changes");
+  assert.equal(model.getSnapshot().rotation, ROTATION.RANDOM);
+  assert.deepEqual(calls, ["current", "history"]);
+  model.dispose();
+});
+
+test("late list initialization preserves edits made while loading and ignores disposed results", async () => {
+  let resolve: (value: DefaultList | null) => void = () => {};
+  let history = 0;
+  const model = new ListDraft(
+    {
+      currentList: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+      async listHistory() {
+        history++;
+        return [];
+      },
+      async publishList() {
+        throw Error("unexpected write");
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  model.edit({ name: "Unsaved" });
+  model.pick({ ...song, canal: "Channel", videoId: "lmnopqrstuv" });
+  resolve(list as DefaultList);
+  await settle();
+  assert.equal(model.getSnapshot().name, "Unsaved");
+  assert.deepEqual(
+    model.getSnapshot().songs.map((s) => s.videoId),
+    ["lmnopqrstuv"],
+  );
+  const pending = model.refresh();
+  const before = model.getSnapshot();
+  model.dispose();
+  resolve(null);
+  await pending;
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(history, 1, "disposal stops follow-up reads");
+});
+
+test("confirmed save refreshes once; uncertain save never retries and retains draft", async () => {
+  let reads = 0;
+  let writes = 0;
+  let fail = false;
+  const model = new ListDraft(
+    {
+      async currentList() {
+        reads++;
+        return list as DefaultList;
+      },
+      async listHistory() {
+        return [];
+      },
+      async publishList() {
+        writes++;
+        if (fail) throw Error("lost acknowledgement");
+        return list as DefaultList;
+      },
+    },
+    id,
+    true,
+  );
+  model.enter();
+  await settle();
+  model.edit({ name: "Keep me" });
+  await Promise.all([model.publish(), model.publish()]);
+  assert.equal(writes, 1);
+  assert.equal(reads, 2);
+  assert.equal(model.getSnapshot().notice, "Lista guardada");
+  assert.equal(model.getSnapshot().name, "Keep me");
+  fail = true;
+  await model.publish();
+  const before = model.getSnapshot();
+  await model.publish();
+  model.enter();
+  await settle();
+  assert.equal(writes, 2);
+  assert.equal(reads, 2);
+  assert.equal(model.getSnapshot(), before);
+  assert.equal(before.uncertain, true);
+  assert.equal(before.name, "Keep me");
+  assert.equal(before.songs.length, 1);
+  await model.refresh();
+  assert.equal(model.getSnapshot().uncertain, false);
+  assert.equal(model.getSnapshot().name, "Keep me");
+  model.dispose();
+});
+
+test("music queue is a concise read-only song view before automatic hydration", () => {
+  let reads = 0;
+  const api = new DemoApi(async () => {
+    reads++;
+    return Response.json({});
+  });
+  const html = renderToStaticMarkup(
+    createElement(QueuePanel, {
+      api,
+      establishment,
+      session: null,
+    }),
+  );
+  assert.match(html, /Cola musical/);
+  assert.match(html, /Actualización automática/);
+  assert.doesNotMatch(
+    html,
+    /<button|<select|servidor|backend|Versión|Actualizar cola/,
+  );
+  assert.equal(reads, 0, "prerender never performs requests");
+});
 
 test("owner-only BFF rejects legacy and foreign identifier routes without effects", async () => {
   const h = harness();

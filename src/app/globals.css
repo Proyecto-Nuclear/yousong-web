@@ -295,6 +295,9 @@ hr {
 }
 .songs li {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 18px;
   padding: 20px 0;
   border-top: 1px solid var(--border);
@@ -345,6 +348,50 @@ footer {
 }
 .demo-catalog {
   margin-top: 24px;
+}
+.demo-queue .heading,
+.demo-form .heading {
+  margin-bottom: 16px;
+}
+.demo-queue h2,
+.demo-form .heading h2 {
+  margin-bottom: 0;
+}
+.demo-form details,
+.session-grid details {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 9px 0;
+}
+.selector p {
+  flex: 1;
+  margin-bottom: 0;
+}
+.demo-catalog form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+.demo-catalog form input {
+  margin-bottom: 0;
+}
+.demo-catalog li > div {
+  flex: 1;
+  min-width: 0;
+}
+[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto;
+  }
 }
 .skip {
   position: fixed;
@@ -421,5 +468,8 @@ footer {
   }
   .session-grid {
     gap: 0;
+  }
+  .demo-catalog form {
+    grid-template-columns: 1fr;
   }
 }

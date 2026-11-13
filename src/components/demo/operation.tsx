@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { OperationGate } from "@/lib/demo-operation";
+import { OperationGate } from "../../lib/demo-operation";
+import { ownerError } from "../../lib/owner-copy";
 
 export function useDemoOperation() {
   const [gate] = useState(() => new OperationGate());
@@ -55,10 +56,10 @@ export function OperationStatus({
 }) {
   return (
     <>
-      <output>{busy ? "Consultando el servidor…" : notice}</output>
+      <output aria-live="polite">{busy ? "Cargando…" : notice}</output>
       {error && (
         <p className="alert" role="alert">
-          {error}
+          {ownerError(error)}
         </p>
       )}
     </>

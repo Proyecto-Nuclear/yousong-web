@@ -1,170 +1,99 @@
 "use client";
 
-import { useState } from "react";
-import type { Song } from "@/lib/admin-api";
-import type { DemoApi } from "@/lib/demo-api";
-import {
-  type DefaultList,
-  isRotation,
-  type ListSummary,
-  ROTATION,
-  type Rotation,
-} from "@/lib/demo-contracts";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { DemoApi } from "../../lib/demo-api";
+import { isRotation, ROTATION } from "../../lib/demo-contracts";
+import { ListDraft } from "../../lib/list-draft";
 import { CatalogPicker } from "./catalog-picker";
-import { OperationStatus, useDemoOperation } from "./operation";
 
 export function ListConfiguration({
   api,
   establishmentId,
   canManage,
+  active = true,
+  onAvailabilityChange,
 }: {
   api: DemoApi;
   establishmentId: string;
   canManage: boolean;
+  active?: boolean;
+  onAvailabilityChange?: (available: boolean) => void;
 }) {
-  const [current, setCurrent] = useState<DefaultList | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [history, setHistory] = useState<ListSummary[] | null>(null);
-  const [draft, setDraft] = useState<Song[]>([]);
-  const [name, setName] = useState("General");
-  const [rotation, setRotation] = useState<Rotation>(ROTATION.SEQUENTIAL);
-  const [uncertain, setUncertain] = useState(false);
-  const op = useDemoOperation();
-  async function refresh(commit: (update: () => void) => void) {
-    const result = await api.currentList(establishmentId);
-    commit(() => {
-      setCurrent(result);
-      setLoaded(true);
-      setUncertain(false);
-    });
-    if (canManage) {
-      const versions = await api.listHistory(establishmentId);
-      commit(() => setHistory(versions));
-    }
-  }
+  const [model] = useState(
+    () => new ListDraft(api, establishmentId, canManage),
+  );
+  const state = useSyncExternalStore(
+    model.subscribe,
+    model.getSnapshot,
+    model.getSnapshot,
+  );
+  useEffect(() => () => model.dispose(), [model]);
+  useEffect(() => {
+    if (active) model.enter();
+  }, [active, model]);
+  useEffect(() => {
+    if (state.loaded) onAvailabilityChange?.(state.current !== null);
+  }, [state.loaded, state.current, onAvailabilityChange]);
   return (
-    <section className="card demo-form">
-      <h2>Lista predeterminada y versiones</h2>
-      <button
-        type="button"
-        disabled={op.busy}
-        onClick={() => void op.run(refresh)}
-      >
-        Consultar lista e historial
-      </button>
-      <OperationStatus {...op} />
-      {!loaded ? (
-        <p>Lista actual sin consultar.</p>
-      ) : current ? (
-        <>
-          <h3>
-            {current.nombre} · Versión {current.version}
-          </h3>
-          <p>
-            Rotación: {current.politicaRotacion} · Publicada: {current.creadoAt}
-          </p>
-          <ol>
-            {current.canciones.map((song) => (
-              <li key={song.cancionId}>
-                {song.posicion}. {song.titulo ?? song.youtubeVideoId} ·{" "}
-                {song.artista ?? "Artista sin información"}
-              </li>
-            ))}
-          </ol>
-        </>
-      ) : (
-        <p>
-          No hay lista predeterminada. Publica una versión antes de abrir la
-          sesión.
+    <section className="card demo-form" hidden={!active}>
+      <div className="heading">
+        <h2>Lista predeterminada</h2>
+        <span className="badge">
+          {state.songs.length} canciones en el borrador
+        </span>
+      </div>
+      <output aria-live="polite">
+        {state.busy ? "Cargando…" : state.notice}
+      </output>
+      {state.error && (
+        <p className="alert" role="alert">
+          {state.error}
         </p>
       )}
-      {history && (
-        <>
-          <h3>Historial publicado</h3>
-          {history.length ? (
-            <ol>
-              {history.map((item) => (
-                <li key={item.id}>
-                  Versión {item.version} · {item.nombre} ·{" "}
-                  {item.politicaRotacion} · {item.totalCanciones} canciones ·{" "}
-                  {item.creadoAt}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p>No hay versiones publicadas.</p>
-          )}
-        </>
+      {!state.loaded && !state.error && <p>Cargando lista…</p>}
+      {state.loaded && !state.current && (
+        <p>Añade canciones para preparar tu primera lista.</p>
       )}
-      <p>
-        La lista es un requisito de apertura y el backend puede usarla cuando no
-        hay solicitudes. Publicarla no inicia audio. Después de publicar,
-        actualiza el estado del establecimiento antes de abrir.
-      </p>
-      {canManage ? (
+      {canManage && (
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void op.run(async (commit) => {
-              if (uncertain) return;
-              commit(() => setUncertain(true));
-              const published = await api.publishList(establishmentId, {
-                nombre: name,
-                politicaRotacion: rotation,
-                canciones: draft.map((song) => song.videoId),
-              });
-              commit(() => {
-                setCurrent(published);
-                setLoaded(true);
-                op.setNotice(
-                  `Publicación confirmada: versión ${published.version}. El borrador se conserva.`,
-                );
-              });
-              await refresh(commit);
-            });
+            void model.publish();
           }}
         >
-          <fieldset disabled={op.busy}>
-            <legend>Publicar una nueva versión</legend>
+          <fieldset disabled={state.busy}>
+            <legend>Tu lista</legend>
             <label>
               Nombre de lista
               <input
-                value={name}
+                value={state.name}
                 maxLength={100}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => model.edit({ name: event.target.value })}
               />
             </label>
             <label>
-              Política de rotación
+              Orden de reproducción
               <select
-                value={rotation}
+                value={state.rotation}
                 onChange={(event) => {
                   if (isRotation(event.target.value))
-                    setRotation(event.target.value);
+                    model.edit({ rotation: event.target.value });
                 }}
               >
-                {Object.values(ROTATION).map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
+                <option value={ROTATION.SEQUENTIAL}>En orden</option>
+                <option value={ROTATION.RANDOM}>Aleatorio</option>
               </select>
             </label>
-            <p>
-              Borrador: {draft.length}/200 canciones únicas. Solo se admiten
-              canciones seleccionadas del catálogo.
-            </p>
-            <ol>
-              {draft.map((song) => (
+            <ol className="songs" aria-label="Canciones del borrador">
+              {state.songs.map((song) => (
                 <li key={song.videoId}>
-                  {song.titulo} · {song.artista}{" "}
+                  <div>
+                    <h3>{song.titulo}</h3>
+                    <p>{song.artista}</p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      setDraft((previous) =>
-                        previous.filter(
-                          (item) => item.videoId !== song.videoId,
-                        ),
-                      )
-                    }
+                    onClick={() => model.remove(song.videoId)}
                     aria-label={`Quitar ${song.titulo} del borrador`}
                   >
                     Quitar
@@ -172,35 +101,74 @@ export function ListConfiguration({
                 </li>
               ))}
             </ol>
-            <button type="submit" disabled={uncertain || draft.length === 0}>
-              Publicar nueva versión
+            <button
+              className="primary"
+              type="submit"
+              disabled={state.uncertain || state.songs.length === 0}
+            >
+              Guardar lista
             </button>
-            {uncertain && (
-              <p>
-                Consulta lista e historial antes de publicar otra vez. El
-                resultado puede ser incierto; el borrador no se borra.
-              </p>
-            )}
           </fieldset>
         </form>
-      ) : (
-        <p>Inicia sesión para publicar listas y consultar el historial.</p>
       )}
-      <fieldset disabled={op.busy}>
+      <details>
+        <summary>Ver lista guardada e historial</summary>
+        {state.current && (
+          <>
+            <h3>
+              {state.current.nombre} · Versión {state.current.version}
+            </h3>
+            <ol>
+              {state.current.canciones.map((song) => (
+                <li key={song.cancionId}>
+                  {song.titulo ?? song.youtubeVideoId} ·{" "}
+                  {song.artista ?? "Artista sin información"}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+        {state.history.map((item) => (
+          <p key={item.id}>
+            Versión {item.version} · {item.nombre} · {item.totalCanciones}{" "}
+            canciones
+          </p>
+        ))}
+        {!state.history.length && <p>Sin versiones anteriores.</p>}
+        <button
+          type="button"
+          disabled={state.busy}
+          onClick={() => void model.refresh()}
+        >
+          Revisar lista guardada
+        </button>
+      </details>
+      {state.uncertain && (
+        <p role="alert">
+          Guardado sin confirmar. Tu borrador se conserva.{" "}
+          <button
+            type="button"
+            disabled={state.busy}
+            onClick={() => void model.refresh()}
+          >
+            Revisar guardado
+          </button>
+        </p>
+      )}
+      {state.error && !state.uncertain && (
+        <button
+          type="button"
+          disabled={state.busy}
+          onClick={() => void model.refresh()}
+        >
+          Reintentar carga
+        </button>
+      )}
+      <fieldset disabled={state.busy}>
         <CatalogPicker
           api={api}
-          selected={draft.map((song) => song.videoId)}
-          onPick={
-            canManage
-              ? (song) =>
-                  setDraft((previous) =>
-                    previous.length >= 200 ||
-                    previous.some((item) => item.videoId === song.videoId)
-                      ? previous
-                      : [...previous, song],
-                  )
-              : undefined
-          }
+          selected={state.songs.map((song) => song.videoId)}
+          onPick={canManage ? (song) => model.pick(song) : undefined}
         />
       </fieldset>
     </section>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { SearchPage, Song } from "@/lib/admin-api";
-import type { DemoApi } from "@/lib/demo-api";
-import { SUGGESTION, type Suggestions } from "@/lib/demo-contracts";
+import type { SearchPage, Song } from "../../lib/admin-api";
+import type { DemoApi } from "../../lib/demo-api";
+import { SUGGESTION, type Suggestions } from "../../lib/demo-contracts";
+import { ownerError } from "../../lib/owner-copy";
 import { OperationStatus, useDemoOperation } from "./operation";
 
 export function CatalogPicker({
@@ -39,11 +40,7 @@ export function CatalogPicker({
         .catch((error) => {
           if (!cancelled && version === revision.current) {
             setSuggestions(null);
-            setSuggestionError(
-              error instanceof Error
-                ? error.message
-                : "Sugerencias no disponibles.",
-            );
+            setSuggestionError(ownerError(error));
           }
         });
     }, 350);
@@ -70,7 +67,7 @@ export function CatalogPicker({
   }
   return (
     <div className="demo-catalog">
-      <h3>Seleccionar canciones del catálogo</h3>
+      <h3>Añadir canciones</h3>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -150,8 +147,8 @@ export function CatalogPicker({
                       onClick={() => onPick(song)}
                     >
                       {selected.includes(song.videoId)
-                        ? "En el borrador"
-                        : "Añadir al borrador"}
+                        ? "Añadida"
+                        : "Añadir a la lista"}
                     </button>
                   )}
                 </div>

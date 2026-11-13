@@ -1,20 +1,18 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { login, logout } from "@/app/actions";
-import type { Establishment, Qr, SearchPage, Session } from "@/lib/admin-api";
+import type { Establishment, Qr, Session } from "@/lib/admin-api";
 import { DemoApi } from "@/lib/demo-api";
+import {
+  ownerError,
+  sessionNotice,
+  OWNER_VIEWS as VIEW,
+} from "@/lib/owner-copy";
 import { EstablishmentForm } from "./demo/establishment-form";
 import { ListConfiguration } from "./demo/list-configuration";
 import { QueuePanel } from "./demo/queue-panel";
 
-const VIEW = {
-  PANEL: "Panel operativo",
-  SESSION: "Sesión y QR",
-  QUEUE: "Cola musical",
-  CATALOG: "Catálogo",
-  SETUP: "Configuración y listas",
-} as const;
 type View = (typeof VIEW)[keyof typeof VIEW];
 const OWNER_CONTROL = {
   PAUSE: "pause",
@@ -23,8 +21,7 @@ const OWNER_CONTROL = {
   MAINTENANCE: "maintenance",
 } as const;
 type OwnerControl = (typeof OWNER_CONTROL)[keyof typeof OWNER_CONTROL];
-const message = (error: unknown) =>
-  error instanceof Error ? error.message : "No se pudo completar la operación.";
+const message = ownerError;
 
 function QrCard({ qr }: { qr: Qr }) {
   const [source, setSource] = useState("");
@@ -54,10 +51,17 @@ function QrCard({ qr }: { qr: Qr }) {
           </a>
         </>
       )}
-      <p className="break">{qr.url}</p>
-      <p>
-        El QR identifica al establecimiento. La participación requiere una
-        sesión en operación.
+      <a
+        className="button break"
+        href={qr.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Abrir acceso móvil
+      </a>
+      <p className="muted">
+        Escanea con la cámara del móvil. Abre la sesión para permitir la
+        participación.
       </p>
     </>
   );
@@ -94,14 +98,12 @@ function AdminPanelContent({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [view, setView] = useState<View>(VIEW.PANEL);
-  const [results, setResults] = useState<SearchPage | null>(null);
-  const [query, setQuery] = useState("");
-  const [searchedQuery, setSearchedQuery] = useState("");
   const generation = useRef(0);
   const pending = useRef(false);
   useEffect(
     () => () => {
       generation.current++;
+      pending.current = false;
     },
     [],
   );
@@ -143,7 +145,9 @@ function AdminPanelContent({
         .then((value) => {
           if (version === generation.current)
             setReadiness(
-              `Servicio: ${value.servicio}. ${value.puedeParticipar ? "Disponible para participar mediante QR." : "No admite participantes ahora."}${value.proximaApertura ? ` Próxima apertura: ${value.proximaApertura}.` : ""}`,
+              value.puedeParticipar
+                ? "Disponible para participar con QR"
+                : "No disponible para participar ahora. Revisa la sesión y el horario del local.",
             );
         })
         .catch((e) => {
@@ -204,6 +208,13 @@ function AdminPanelContent({
       }
     }
   }
+  const connectOnEntry = useEffectEvent(() => {
+    void connect();
+  });
+  useEffect(() => {
+    if (authenticated) connectOnEntry();
+  }, [authenticated]);
+
   async function mutate() {
     if (!api || !selected || !loaded || pending.current) return;
     if (
@@ -234,9 +245,10 @@ function AdminPanelContent({
         const result = await api.openSession(selected.id);
         if (version !== generation.current) return;
         setSession(result);
-        setNotice("Sesión abierta en el backend.");
+        setNotice("Sesión abierta");
       }
       setLoaded(true);
+      await refreshAvailability(api, selected, version);
     } catch (e) {
       if (version === generation.current) {
         setError(message(e));
@@ -247,6 +259,26 @@ function AdminPanelContent({
         setBusy(false);
         pending.current = false;
       }
+    }
+  }
+  async function refreshAvailability(
+    client: DemoApi,
+    establishment: Establishment,
+    version: number,
+  ) {
+    try {
+      const value = await client.availability(establishment.qrSlug);
+      if (version === generation.current)
+        setReadiness(
+          value.puedeParticipar
+            ? "Disponible para participar con QR"
+            : "No disponible para participar ahora. Revisa la sesión y el horario del local.",
+        );
+    } catch {
+      if (version === generation.current)
+        setReadiness(
+          "No pudimos consultar la disponibilidad. Reintenta la consulta de estado.",
+        );
     }
   }
   async function control(action: OwnerControl) {
@@ -265,9 +297,7 @@ function AdminPanelContent({
             : await api.resumeSession();
         if (version !== generation.current) return;
         setSession(value);
-        setNotice(
-          `Estado confirmado por el backend: ${value.estado}. Actualiza la disponibilidad pública.`,
-        );
+        setNotice(sessionNotice(value.estado));
       } else {
         const value =
           action === "service"
@@ -275,42 +305,16 @@ function AdminPanelContent({
             : await api.endMaintenance();
         if (version !== generation.current) return;
         setSelected(value);
-        setNotice(
-          "Cambio confirmado por el backend. Actualiza la disponibilidad pública.",
-        );
+        setNotice("Servicio actualizado");
       }
       setLoaded(true);
-      setReadiness("Disponibilidad sin confirmar. Actualiza el estado.");
+      await refreshAvailability(api, selected, version);
     } catch (e) {
       if (version === generation.current) {
         setError(message(e));
         setLoaded(false);
         setReadiness("Resultado sin confirmar. Actualiza antes de repetir.");
       }
-    } finally {
-      if (version === generation.current) {
-        setBusy(false);
-        pending.current = false;
-      }
-    }
-  }
-  async function search(event?: FormEvent, page?: string) {
-    event?.preventDefault();
-    if (!api || pending.current) return;
-    pending.current = true;
-    const version = generation.current;
-    const text = page ? searchedQuery : query;
-    setBusy(true);
-    setError("");
-    setResults(null);
-    try {
-      const value = await api.search(text, page);
-      if (version === generation.current) {
-        setResults(value);
-        setSearchedQuery(text);
-      }
-    } catch (e) {
-      if (version === generation.current) setError(message(e));
     } finally {
       if (version === generation.current) {
         setBusy(false);
@@ -329,7 +333,9 @@ function AdminPanelContent({
           Y<span>YouSong</span>
         </a>
         <span className="top-label">Administración · Música para tu local</span>
-        <span className="badge">{api ? "API conectada" : "Sin conexión"}</span>
+        <span className="badge">
+          {session ? sessionNotice(session.estado) : "Sin sesión abierta"}
+        </span>
         {authenticated && (
           <form action={logout}>
             <button type="submit">Cerrar sesión</button>
@@ -350,18 +356,11 @@ function AdminPanelContent({
             </button>
           ))}
         </nav>
-        <div className="sidebar-note">
-          Una sala.
-          <br />
-          Muchas canciones.<p>Datos reales, sin simulación.</p>
-        </div>
       </aside>
       <main id="main" tabIndex={-1}>
         <div className="heading">
           <div>
-            <p className="eyebrow">YouSong / Operación</p>
             <h1>{view}</h1>
-            <p>Gestiona la sesión de tu establecimiento.</p>
           </div>
           <span className="badge">
             {busy ? "Cargando…" : (selected?.nombre ?? "Conexión de personal")}
@@ -374,7 +373,7 @@ function AdminPanelContent({
         )}
         <output className="status" aria-live="polite">
           {busy ? (
-            <p>Cargando datos de la API…</p>
+            <p>Cargando…</p>
           ) : (
             notice && <p className="notice">{notice}</p>
           )}
@@ -386,8 +385,9 @@ function AdminPanelContent({
               {authenticated ? "Sesión de personal iniciada" : "Iniciar sesión"}
             </h2>
             <p>
-              Accede de forma segura con FusionAuth. Las credenciales de la API
-              se gestionan únicamente en el servidor.
+              {authenticated
+                ? "Preparando tu establecimiento."
+                : "Accede para gestionar la música de tu local."}
             </p>
             {authenticated ? (
               <button
@@ -396,7 +396,7 @@ function AdminPanelContent({
                 disabled={busy}
                 onClick={() => void connect()}
               >
-                {busy ? "Conectando…" : "Cargar establecimiento"}
+                {busy ? "Conectando…" : "Reintentar conexión"}
               </button>
             ) : (
               <form action={login}>
@@ -408,19 +408,21 @@ function AdminPanelContent({
           </section>
         ) : (
           <>
-            <section className="selector card">
-              <p>
-                Mi establecimiento:{" "}
-                {selected?.nombre ?? "Sin establecimiento asociado"}
-              </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void connect()}
-              >
-                Actualizar estado
-              </button>
-            </section>
+            {(view === VIEW.PANEL || view === VIEW.SESSION) && (
+              <section className="selector card">
+                <p>
+                  Mi establecimiento:{" "}
+                  {selected?.nombre ?? "Sin establecimiento asociado"}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void connect()}
+                >
+                  Actualizar estado
+                </button>
+              </section>
+            )}
             {!items.length && (
               <section className="card">
                 <h2>Sin establecimientos</h2>
@@ -440,29 +442,29 @@ function AdminPanelContent({
             )}
             {selected && (
               <>
-                {view === VIEW.SETUP && (
-                  <>
-                    {ownerAccess && (
-                      <EstablishmentForm
-                        key={selected.id}
-                        api={api}
-                        current={selected}
-                        onSaved={saved}
-                      />
-                    )}
-                    <ListConfiguration
-                      key={`list:${selected.id}`}
+                <ListConfiguration
+                  key={`list:${selected.id}`}
+                  api={api}
+                  establishmentId={selected.id}
+                  canManage={ownerAccess}
+                  active={view === VIEW.SETUP}
+                  onAvailabilityChange={setHasList}
+                />
+                {view === VIEW.SETUP && ownerAccess && (
+                  <details className="card">
+                    <summary>Datos del establecimiento</summary>
+                    <EstablishmentForm
+                      key={selected.id}
                       api={api}
-                      establishmentId={selected.id}
-                      canManage={ownerAccess}
+                      current={selected}
+                      onSaved={saved}
                     />
-                  </>
+                  </details>
                 )}
                 {(view === VIEW.PANEL || view === VIEW.SESSION) && (
                   <div className="session-grid">
                     <section className="card">
-                      <p className="eyebrow">Acceso para participantes</p>
-                      <h2>QR del establecimiento</h2>
+                      <h2>Acceso móvil</h2>
                       {qr ? (
                         <QrCard qr={qr} />
                       ) : (
@@ -471,19 +473,16 @@ function AdminPanelContent({
                             (busy ? "Cargando QR…" : "QR no disponible.")}
                         </p>
                       )}
-                      <p className="muted">
-                        El QR es público y no contiene credenciales de
-                        participante.
-                      </p>
                     </section>
                     <section className="card">
-                      <p className="eyebrow">Control del local</p>
                       <h2>Sesión actual</h2>
                       {!loaded ? (
                         <p>Estado sin confirmar. Actualiza antes de operar.</p>
                       ) : session ? (
                         <>
-                          <span className="badge">{session.estado}</span>
+                          <span className="badge">
+                            {sessionNotice(session.estado)}
+                          </span>
                           <dl>
                             <dt>Fecha operativa</dt>
                             <dd>{session.fechaOperativa}</dd>
@@ -519,26 +518,15 @@ function AdminPanelContent({
                           {session ? "Finalizar sesión" : "Abrir sesión"}
                         </button>
                       )}
-                      <p>
-                        Abrir requiere un local activo, sin pausa ni
-                        mantenimiento y una lista predeterminada configurada.
-                      </p>
                       {!session && hasList === false && (
                         <p>
-                          Configura una lista predeterminada antes de abrir la
-                          sesión. En Configuración y listas, selecciona
-                          canciones reales y publica una versión; después
-                          actualiza el estado.
+                          Guarda una lista en Configuración y listas antes de
+                          abrir.
                         </p>
                       )}
                       <output className="status" aria-live="polite">
                         {readiness}
                       </output>
-                      <p>
-                        Sesión y servicio son estados distintos. El horario
-                        también puede impedir participar aunque la sesión esté
-                        abierta. Horarios vacíos no restringen el servicio.
-                      </p>
                       {session?.estado === "ABIERTA" && (
                         <button
                           type="button"
@@ -575,11 +563,14 @@ function AdminPanelContent({
                           Finalizar mantenimiento
                         </button>
                       )}
-                      <p>
-                        No se cambian horarios, pausas ni mantenimiento
-                        automáticamente. Si el horario impide participar, debe
-                        revisarse en la configuración del backend.
-                      </p>
+                      <details>
+                        <summary>Requisitos de apertura</summary>
+                        <p>
+                          El local debe estar activo, sin pausa ni mantenimiento
+                          y tener una lista guardada. El horario del local
+                          también determina cuándo se puede participar.
+                        </p>
+                      </details>
                     </section>
                   </div>
                 )}
@@ -589,81 +580,8 @@ function AdminPanelContent({
                     api={api}
                     establishment={selected}
                     session={loaded ? session : null}
+                    showPlaybackControls={view === VIEW.PANEL}
                   />
-                )}
-                {view === VIEW.CATALOG && (
-                  <section className="card">
-                    <p className="eyebrow">Catálogo conectado</p>
-                    <h2>Buscar canciones</h2>
-                    <form className="search" onSubmit={search}>
-                      <label htmlFor="query">
-                        Título o artista (2–100 caracteres)
-                      </label>
-                      <input
-                        id="query"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        minLength={2}
-                        maxLength={100}
-                        required
-                        disabled={busy}
-                      />
-                      <button type="submit" disabled={busy}>
-                        Buscar
-                      </button>
-                    </form>
-                    <p>
-                      Consulta del catálogo; añadir a la cola no está
-                      disponible.
-                    </p>
-                    {results && (
-                      <>
-                        <output className="status">
-                          {results.resultados.length
-                            ? `${results.resultados.length} resultados en esta página`
-                            : "No se encontraron canciones."}
-                        </output>
-                        <ul className="songs">
-                          {results.resultados.map((song) => (
-                            <li key={song.videoId}>
-                              <span className="song-icon" aria-hidden="true">
-                                ♪
-                              </span>
-                              <div>
-                                <h3>{song.titulo}</h3>
-                                <p>
-                                  {song.artista}
-                                  {song.artistaVerificado
-                                    ? " · Artista verificado"
-                                    : ""}
-                                </p>
-                                <p>
-                                  Canal: {song.canal} ·{" "}
-                                  {song.duracionSegundos === null
-                                    ? "Duración no disponible"
-                                    : `${Math.floor(song.duracionSegundos / 60)}:${String(song.duracionSegundos % 60).padStart(2, "0")}`}
-                                </p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                        {results.siguientePagina && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              void search(
-                                undefined,
-                                results.siguientePagina ?? undefined,
-                              )
-                            }
-                          >
-                            Siguiente página
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </section>
                 )}
               </>
             )}
