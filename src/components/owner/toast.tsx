@@ -5,7 +5,6 @@ import {
   type ReactNode,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { CheckIcon, CloseIcon } from "../icons";
@@ -25,25 +24,40 @@ export function useNotify() {
 
 const TOAST_MS = 6000;
 
+type SetToasts = (update: (list: Toast[]) => Toast[]) => void;
+
+/**
+ * Toast actions built once per provider from the (stable) state setter.
+ * ToastProvider creates them in a useState initializer, so their identity
+ * never changes between renders, with or without the React Compiler; effects
+ * that depend on `notify` (list-configuration) therefore cannot loop.
+ */
+export function createToastActions(setToasts: SetToasts) {
+  let next = 0;
+  return {
+    notify(text: string) {
+      if (!text) return;
+      const id = ++next;
+      // Same text twice in a row restarts instead of stacking duplicates.
+      setToasts((list) =>
+        [...list.filter((t) => t.text !== text), { id, text }].slice(-3),
+      );
+    },
+    dismiss(id: number) {
+      setToasts((list) => list.filter((toast) => toast.id !== id));
+    },
+  };
+}
+
 // One polite live region for confirmations across the panel. Errors use
 // role="alert" callouts in their own area; toasts never carry errors.
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const next = useRef(0);
-  const notify: Notify = (text) => {
-    if (!text) return;
-    const id = ++next.current;
-    // Same text twice in a row restarts instead of stacking duplicates.
-    setToasts((list) =>
-      [...list.filter((t) => t.text !== text), { id, text }].slice(-3),
-    );
-  };
-  const dismiss = (id: number) =>
-    setToasts((list) => list.filter((toast) => toast.id !== id));
+  const [actions] = useState(() => createToastActions(setToasts));
   return (
-    <ToastContext.Provider value={notify}>
+    <ToastContext.Provider value={actions.notify}>
       {children}
-      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+      <ToastRegion toasts={toasts} onDismiss={actions.dismiss} />
     </ToastContext.Provider>
   );
 }
