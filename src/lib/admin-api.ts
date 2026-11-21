@@ -40,6 +40,19 @@ export interface Song {
   canal: string;
   duracionSegundos: number | null;
   miniaturaUrl: string | null;
+  /**
+   * Spanish genre label, null when unknown. Older backends omit the field;
+   * readers treat a missing value exactly like null.
+   */
+  genero?: string | null;
+}
+/** Accepts a missing, null or bounded genre label (see Song.genero). */
+export function isGenre(value: unknown): value is string | null | undefined {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.length <= 80)
+  );
 }
 export interface SearchPage {
   resultados: Song[];
@@ -281,7 +294,8 @@ export class AdminApi {
             (s.duracionSegundos === null ||
               (Number.isInteger(s.duracionSegundos) &&
                 Number(s.duracionSegundos) >= 0)) &&
-            (s.miniaturaUrl === null || typeof s.miniaturaUrl === "string"),
+            (s.miniaturaUrl === null || typeof s.miniaturaUrl === "string") &&
+            isGenre(s.genero),
         ),
     );
   }

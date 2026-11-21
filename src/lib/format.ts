@@ -28,6 +28,12 @@ export function songMeta(artist: string, seconds: number | null | undefined) {
   return duration ? `${artist} · ${duration}` : artist;
 }
 
+/** Displayable genre label, or null when missing, null or blank. */
+export function genreLabel(value: string | null | undefined) {
+  const text = value?.trim();
+  return text ? text : null;
+}
+
 /** Estimated wait as shown next to each queued song. */
 export function waitLabel(seconds: number | null | undefined) {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds))

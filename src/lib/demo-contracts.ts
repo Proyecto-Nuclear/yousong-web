@@ -1,4 +1,4 @@
-import type { Song } from "./admin-api";
+import { isGenre, type Song } from "./admin-api";
 
 export const ROTATION = {
   SEQUENTIAL: "SECUENCIAL",
@@ -188,7 +188,8 @@ export function isQueueSong(value: unknown): value is QueueSong {
     typeof value.artista === "string" &&
     typeof value.artistaVerificado === "boolean" &&
     (value.duracionSegundos === null || integer(value.duracionSegundos)) &&
-    nullableText(value.miniaturaUrl)
+    nullableText(value.miniaturaUrl) &&
+    isGenre(value.genero)
   );
 }
 export function isSong(value: unknown): value is Song {

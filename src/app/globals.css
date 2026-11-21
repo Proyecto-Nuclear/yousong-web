@@ -738,6 +738,14 @@
   .meta__time {
     font-variant-numeric: tabular-nums;
   }
+  .meta__verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .meta__verified svg {
+    color: var(--live-text);
+  }
 
   /* Cards */
   .card {
