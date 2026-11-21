@@ -11,7 +11,7 @@ import { OperationStatus } from "../src/components/owner/operation";
 import { VoteCount } from "../src/components/owner/queue-panel";
 import { ToastRegion } from "../src/components/owner/toast";
 import { contrastRatio } from "../src/lib/contrast";
-import { coverFor } from "../src/lib/cover";
+import { COVER_PALETTES, coverFor } from "../src/lib/cover";
 import {
   formatDuration,
   nightLabel,
@@ -239,24 +239,31 @@ function tokens(css: string, selector: string) {
   );
 }
 
-test("token palette meets WCAG contrast in both themes", () => {
-  const css = readFileSync("src/app/globals.css", "utf8");
-  const dark = tokens(css, ":root");
-  const light = { ...dark, ...tokens(css, ':root[data-theme="light"]') };
-  for (const [name, t] of [
-    ["dark", dark],
-    ["light", light],
-  ] as const) {
+const css = readFileSync("src/app/globals.css", "utf8");
+const dark = tokens(css, ":root");
+const light = { ...dark, ...tokens(css, ':root[data-theme="light"]') };
+// The stage (now playing) keeps the night tokens in both themes.
+const stageDark = { ...dark, ...tokens(css, ".stage") };
+const stageLight = { ...light, ...tokens(css, ".stage") };
+const themes = [
+  ["dark", dark],
+  ["light", light],
+  ["stage in dark", stageDark],
+  ["stage in light", stageLight],
+] as const;
+
+test("token palette meets WCAG contrast in both themes and on the stage", () => {
+  for (const [name, t] of themes) {
     for (const plane of ["bg", "surface", "raised"]) {
-      for (const text of ["text", "muted"])
+      for (const text of ["text", "muted", "accent-text", "live-text"])
         assert.ok(
           contrastRatio(t[text], t[plane]) >= 4.5,
-          `${name} ${text}/${plane}`,
+          `${name} ${text}/${plane} ${contrastRatio(t[text], t[plane]).toFixed(2)}`,
         );
-      for (const control of ["border", "focus", "accent"])
+      for (const control of ["border", "focus", "accent-edge", "live"])
         assert.ok(
           contrastRatio(t[control], t[plane]) >= 3,
-          `${name} ${control}/${plane}`,
+          `${name} ${control}/${plane} ${contrastRatio(t[control], t[plane]).toFixed(2)}`,
         );
     }
     for (const [fg, bg] of [
@@ -265,7 +272,89 @@ test("token palette meets WCAG contrast in both themes", () => {
       ["success", "success-tint"],
       ["warn", "warn-tint"],
       ["danger", "surface"],
+      ["tag-text", "tag"],
+      ["live-text", "live-tint"],
+      // Toasts invert the planes: background is --text, text is --bg.
+      ["bg", "text"],
     ])
-      assert.ok(contrastRatio(t[fg], t[bg]) >= 4.5, `${name} ${fg}/${bg}`);
+      assert.ok(
+        contrastRatio(t[fg], t[bg]) >= 4.5,
+        `${name} ${fg}/${bg} ${contrastRatio(t[fg], t[bg]).toFixed(2)}`,
+      );
   }
+});
+
+test("palette Noche de verbena pins the decided tokens", () => {
+  assert.deepEqual(
+    [
+      "bg",
+      "surface",
+      "raised",
+      "hairline",
+      "border",
+      "text",
+      "muted",
+      "accent",
+      "accent-ink",
+      "live",
+      "danger",
+      "danger-tint",
+      "success",
+      "success-tint",
+    ].map((key) => dark[key].toLowerCase()),
+    [
+      "#14101f",
+      "#1e1830",
+      "#2a2243",
+      "#342b52",
+      "#8a7fb0",
+      "#f6f1ff",
+      "#bdb4d6",
+      "#ffb547",
+      "#1b1530",
+      "#3dd6c6",
+      "#ff8f8f",
+      "#3a1f2b",
+      "#cff7ef",
+      "#17332f",
+    ],
+  );
+  assert.deepEqual(
+    [
+      "bg",
+      "surface",
+      "raised",
+      "text",
+      "muted",
+      "accent",
+      "accent-ink",
+      "accent-text",
+      "live",
+      "border",
+    ].map((key) => light[key].toLowerCase()),
+    [
+      "#f6f3fb",
+      "#ffffff",
+      "#ece6f6",
+      "#1b1530",
+      "#50476b",
+      "#ffb547",
+      "#1b1530",
+      "#5b3fd0",
+      "#0b7f73",
+      "#7d7399",
+    ],
+  );
+});
+
+test("generated cover palettes are drawn from the token palette", () => {
+  const palette = new Set(
+    [dark, light, stageDark].flatMap((t) =>
+      Object.values(t).map((value) => value.toLowerCase()),
+    ),
+  );
+  for (const cover of COVER_PALETTES)
+    for (const color of Object.values(cover))
+      assert.ok(palette.has(color.toLowerCase()), color);
+  assert.equal(new Set(COVER_PALETTES.map((p) => p.ground)).size, 6);
 });
