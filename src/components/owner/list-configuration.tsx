@@ -11,6 +11,7 @@ import { CATALOG_SEARCH_ID, CatalogPicker } from "./catalog-picker";
 import { EmptyState, ErrorCallout, Loading, SkeletonRows } from "./feedback";
 import { SongMeta } from "./song-meta";
 import { useNotify } from "./toast";
+import { TrendingSongs } from "./trending";
 
 const ROTATION_LABEL = {
   [ROTATION.SEQUENTIAL]: "En orden",
@@ -220,6 +221,12 @@ export function ListConfiguration({
           <fieldset disabled={state.busy}>
             <CatalogPicker
               api={api}
+              selected={state.songs.map((song) => song.videoId)}
+              onPick={canManage ? (song) => model.pick(song) : undefined}
+            />
+            <TrendingSongs
+              api={api}
+              active={active}
               selected={state.songs.map((song) => song.videoId)}
               onPick={canManage ? (song) => model.pick(song) : undefined}
             />

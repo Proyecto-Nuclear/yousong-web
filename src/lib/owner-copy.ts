@@ -65,12 +65,17 @@ const MESSAGES = {
   listLoad: "No pudimos cargar la lista. Intenta de nuevo.",
   period: "Elige un periodo de 7, 30 o 90 días.",
   venueMissing: "No encontramos los datos de tu local. Actualiza el estado.",
+  trendsOff:
+    "Las tendencias no están disponibles ahora. La búsqueda sigue funcionando.",
   queueChange:
     "No pudimos confirmar el cambio. Revisa la cola antes de intentarlo otra vez.",
   generic:
     "No pudimos confirmar la acción. Actualiza el estado antes de intentarlo otra vez.",
 } as const;
 const KNOWN = new Set<string>(Object.values(MESSAGES));
+
+/** Quiet line when the trends endpoint answers 503 (catalog off or busy). */
+export const TRENDS_UNAVAILABLE = MESSAGES.trendsOff;
 
 // Presentation-only translation. API error codes and transport contracts stay
 // authoritative; unexpected diagnostics never become owner-facing text.

@@ -133,6 +133,13 @@ export interface Highlights {
   ultimasSonadas: { cancion: QueueSong; sonoAt: string; enCurso: boolean }[];
 }
 
+/** Most popular music on YouTube for a region (cached server-side). */
+export interface Trends {
+  region: string;
+  actualizadoAt: string;
+  canciones: Song[];
+}
+
 export function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -334,6 +341,18 @@ export function isHighlights(value: unknown): value is Highlights {
         !Number.isNaN(Date.parse(item.sonoAt)) &&
         typeof item.enCurso === "boolean",
     )
+  );
+}
+export function isTrends(value: unknown): value is Trends {
+  return (
+    object(value) &&
+    typeof value.region === "string" &&
+    /^[A-Z]{2}$/.test(value.region) &&
+    typeof value.actualizadoAt === "string" &&
+    !Number.isNaN(Date.parse(value.actualizadoAt)) &&
+    Array.isArray(value.canciones) &&
+    value.canciones.length <= 25 &&
+    value.canciones.every(isSong)
   );
 }
 export function isSuggestions(value: unknown): value is Suggestions {

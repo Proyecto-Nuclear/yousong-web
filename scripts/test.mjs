@@ -29,6 +29,7 @@ try {
       "tests/design.test.ts",
       "tests/owner-ui.test.ts",
       "tests/song-result.test.ts",
+      "tests/trending.test.ts",
     ],
     { stdio: "inherit" },
   );
@@ -46,6 +47,7 @@ try {
           join(temp, "tests/design.test.js"),
           join(temp, "tests/owner-ui.test.js"),
           join(temp, "tests/song-result.test.js"),
+          join(temp, "tests/trending.test.js"),
         ],
         {
           stdio: "inherit",

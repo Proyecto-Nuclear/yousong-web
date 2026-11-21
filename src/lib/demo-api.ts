@@ -15,6 +15,7 @@ import {
   isStarted,
   isSuggestions,
   isSummary,
+  isTrends,
   isUpdate,
   type ListSummary,
   object,
@@ -23,6 +24,7 @@ import {
   type Started,
   type Suggestions,
   slug,
+  type Trends,
 } from "./demo-contracts";
 
 function establishment(value: unknown): value is Establishment {
@@ -139,6 +141,10 @@ export class DemoApi extends AdminApi {
       ),
       isQueue,
     );
+  }
+  /** Trending music in Colombia (public, cached six hours by the backend). */
+  async trends(): Promise<Trends> {
+    return checked(await this.request("/api/public/tendencias"), isTrends);
   }
   /** Public highlights of the venue for the last `dias` days (1..365). */
   async highlights(qrSlug: string, dias: number): Promise<Highlights> {

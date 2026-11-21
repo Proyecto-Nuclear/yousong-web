@@ -11,6 +11,7 @@ const GET_PATHS = [
   /^\/api\/mi-establecimiento\/(sesion-actual|qr|lista-defecto|listas-defecto)$/,
   /^\/api\/mi-establecimiento\/catalogo\/(busqueda|sugerencias)$/,
   /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}(?:\/(?:cola|destacadas))?$/,
+  /^\/api\/public\/tendencias$/,
 ];
 const POST_PATHS = [
   /^\/api\/mi-establecimiento\/sesiones$/,
