@@ -3,10 +3,12 @@ import {
   type Availability,
   type DefaultList,
   type Finished,
+  type Highlights,
   isAvailability,
   isCreate,
   isFinishBody,
   isFinished,
+  isHighlights,
   isList,
   isPublish,
   isQueue,
@@ -16,6 +18,7 @@ import {
   isUpdate,
   type ListSummary,
   object,
+  period,
   type Queue,
   type Started,
   type Suggestions,
@@ -135,6 +138,18 @@ export class DemoApi extends AdminApi {
         `/api/public/establecimientos/${encoded(qrSlug)}/cola`,
       ),
       isQueue,
+    );
+  }
+  /** Public highlights of the venue for the last `dias` days (1..365). */
+  async highlights(qrSlug: string, dias: number): Promise<Highlights> {
+    input(qrSlug, slug);
+    if (!period(dias))
+      throw new Error("El periodo debe estar entre 1 y 365 días.");
+    return checked(
+      await this.request(
+        `/api/public/establecimientos/${encoded(qrSlug)}/destacadas?dias=${dias}`,
+      ),
+      isHighlights,
     );
   }
   async next(_scopeId: string): Promise<Started> {

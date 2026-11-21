@@ -35,6 +35,7 @@ test("owner navigation keeps one place to search and save the local list", () =>
     "Panel operativo",
     "Noche y QR",
     "Cola musical",
+    "Analítica",
     "Configuración y listas",
   ]);
 });

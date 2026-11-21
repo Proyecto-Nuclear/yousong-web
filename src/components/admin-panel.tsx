@@ -27,6 +27,7 @@ import {
   StopIcon,
   WrenchIcon,
 } from "./icons";
+import { Analytics } from "./owner/analytics";
 import { Bunting } from "./owner/bunting";
 import { ConfirmDialog } from "./owner/confirm-dialog";
 import { EstablishmentForm } from "./owner/establishment-form";
@@ -724,6 +725,15 @@ function AdminPanelContent({
                         )}
                     </section>
                   </div>
+                )}
+                {view === VIEW.ANALYTICS && (
+                  <Analytics
+                    key={`analytics:${selected.id}`}
+                    api={api}
+                    qrSlug={selected.qrSlug}
+                    timeZone={selected.zonaHoraria}
+                    onOpenNight={() => go(VIEW.SESSION)}
+                  />
                 )}
                 {(view === VIEW.PANEL || view === VIEW.QUEUE) && (
                   <QueuePanel

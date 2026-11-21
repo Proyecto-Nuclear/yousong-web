@@ -2,6 +2,7 @@ export const OWNER_VIEWS = {
   PANEL: "Panel operativo",
   SESSION: "Noche y QR",
   QUEUE: "Cola musical",
+  ANALYTICS: "Analítica",
   SETUP: "Configuración y listas",
 } as const;
 
@@ -10,6 +11,7 @@ export const OWNER_VIEW_SHORT: Record<string, string> = {
   [OWNER_VIEWS.PANEL]: "Panel",
   [OWNER_VIEWS.SESSION]: "Noche",
   [OWNER_VIEWS.QUEUE]: "Cola",
+  [OWNER_VIEWS.ANALYTICS]: "Analítica",
   [OWNER_VIEWS.SETUP]: "Ajustes",
 };
 
@@ -19,6 +21,8 @@ export const OWNER_VIEW_SUBTITLE: Record<string, string> = {
   [OWNER_VIEWS.SESSION]:
     "Abre la noche, comparte el QR y controla la participación.",
   [OWNER_VIEWS.QUEUE]: "Las solicitudes de tu público, ordenadas por votos.",
+  [OWNER_VIEWS.ANALYTICS]:
+    "Lo que más vota, pide y escucha tu público en tu local.",
   [OWNER_VIEWS.SETUP]:
     "La lista que suena cuando nadie pide y los datos del local.",
 };
@@ -59,6 +63,8 @@ const MESSAGES = {
   listUncertain:
     "No pudimos confirmar el guardado. Revisa la lista antes de volver a guardar.",
   listLoad: "No pudimos cargar la lista. Intenta de nuevo.",
+  period: "Elige un periodo de 7, 30 o 90 días.",
+  venueMissing: "No encontramos los datos de tu local. Actualiza el estado.",
   queueChange:
     "No pudimos confirmar el cambio. Revisa la cola antes de intentarlo otra vez.",
   generic:
@@ -103,6 +109,8 @@ export function ownerError(reason: unknown): string {
     [/conectar con la API/i, MESSAGES.offline],
     [/confirmar el cambio/i, MESSAGES.queueChange],
     [/búsqueda de 2 a 100/i, MESSAGES.searchLength],
+    [/periodo/i, MESSAGES.period],
+    [/no se encontró el establecimiento/i, MESSAGES.venueMissing],
     [/datos|caracteres|tamaño|formato/i, MESSAGES.data],
   ];
   return rules.find(([pattern]) => pattern.test(text))?.[1] ?? MESSAGES.generic;

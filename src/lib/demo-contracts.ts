@@ -121,6 +121,18 @@ export interface Suggestions {
   sugerencias: Suggestion[];
 }
 
+/** Periods offered by the Analítica view; the backend accepts 1..365 days. */
+export const PERIODS = [7, 30, 90] as const;
+export const period = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= 365;
+export interface Highlights {
+  periodoDias: number;
+  masVotadas: { cancion: QueueSong; votos: number }[];
+  masPedidas: { cancion: QueueSong; veces: number }[];
+  masSonadas: { cancion: QueueSong; reproducciones: number }[];
+  ultimasSonadas: { cancion: QueueSong; sonoAt: string; enCurso: boolean }[];
+}
+
 export function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -294,6 +306,34 @@ export function isFinished(value: unknown): value is Finished {
     nullableText(value.motivoCodigo) &&
     typeof value.terminadaAt === "string" &&
     integer(value.colaVersion)
+  );
+}
+function ranked(value: unknown, key: string) {
+  return (
+    Array.isArray(value) &&
+    value.length <= 10 &&
+    value.every(
+      (item) => object(item) && isQueueSong(item.cancion) && integer(item[key]),
+    )
+  );
+}
+export function isHighlights(value: unknown): value is Highlights {
+  return (
+    object(value) &&
+    period(value.periodoDias) &&
+    ranked(value.masVotadas, "votos") &&
+    ranked(value.masPedidas, "veces") &&
+    ranked(value.masSonadas, "reproducciones") &&
+    Array.isArray(value.ultimasSonadas) &&
+    value.ultimasSonadas.length <= 10 &&
+    value.ultimasSonadas.every(
+      (item) =>
+        object(item) &&
+        isQueueSong(item.cancion) &&
+        typeof item.sonoAt === "string" &&
+        !Number.isNaN(Date.parse(item.sonoAt)) &&
+        typeof item.enCurso === "boolean",
+    )
   );
 }
 export function isSuggestions(value: unknown): value is Suggestions {

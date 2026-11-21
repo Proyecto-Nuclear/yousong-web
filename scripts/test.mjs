@@ -23,6 +23,7 @@ try {
       "--jsx",
       "react-jsx",
       "tests/admin-api.test.ts",
+      "tests/analytics.test.ts",
       "tests/auth.test.ts",
       "tests/demo.test.ts",
       "tests/design.test.ts",
@@ -39,6 +40,7 @@ try {
         [
           "--test",
           join(temp, "tests/admin-api.test.js"),
+          join(temp, "tests/analytics.test.js"),
           join(temp, "tests/auth.test.js"),
           join(temp, "tests/demo.test.js"),
           join(temp, "tests/design.test.js"),

@@ -1184,6 +1184,12 @@
     height: 36px;
     border-radius: var(--r-pill);
   }
+  .skeleton__title {
+    display: block;
+    width: 45%;
+    height: 18px;
+    margin-bottom: var(--s3);
+  }
   .skeleton__lines {
     display: grid;
     gap: var(--s2);
@@ -1204,6 +1210,16 @@
   }
   .empty--plain {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* Inside a titled card the card already frames it: plain muted line. */
+  .card .empty--plain {
+    padding: var(--s3) 0;
+    border: 0;
+  }
+  .card .empty--plain .empty__title {
+    color: var(--muted);
+    font-size: var(--fs-15);
+    font-weight: 500;
   }
   .empty__icon {
     display: grid;

@@ -1,13 +1,14 @@
 "use client";
 
 import { OWNER_VIEW_SHORT, OWNER_VIEWS as VIEW } from "../../lib/owner-copy";
-import { HomeIcon, QrIcon, QueueIcon, SettingsIcon } from "../icons";
+import { ChartIcon, HomeIcon, QrIcon, QueueIcon, SettingsIcon } from "../icons";
 
 type View = (typeof VIEW)[keyof typeof VIEW];
 const VIEW_ICON = {
   [VIEW.PANEL]: HomeIcon,
   [VIEW.SESSION]: QrIcon,
   [VIEW.QUEUE]: QueueIcon,
+  [VIEW.ANALYTICS]: ChartIcon,
   [VIEW.SETUP]: SettingsIcon,
 } as const;
 
