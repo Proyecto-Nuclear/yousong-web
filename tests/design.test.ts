@@ -5,14 +5,21 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Cover } from "../src/components/cover";
 import { ConfirmDialog } from "../src/components/owner/confirm-dialog";
-import { ErrorCallout } from "../src/components/owner/feedback";
+import { EmptyState, ErrorCallout } from "../src/components/owner/feedback";
 import { OwnerNavigation } from "../src/components/owner/navigation";
+import { NightChip } from "../src/components/owner/night-chip";
 import { OperationStatus } from "../src/components/owner/operation";
-import { VoteCount } from "../src/components/owner/queue-panel";
+import {
+  NowPlaying,
+  playedShare,
+  VoteCount,
+} from "../src/components/owner/queue-panel";
 import { ToastRegion } from "../src/components/owner/toast";
 import { contrastRatio } from "../src/lib/contrast";
 import { COVER_PALETTES, coverFor } from "../src/lib/cover";
 import {
+  approxDuration,
+  drainSeconds,
   formatDuration,
   nightLabel,
   plural,
@@ -357,4 +364,87 @@ test("generated cover palettes are drawn from the token palette", () => {
     for (const color of Object.values(cover))
       assert.ok(palette.has(color.toLowerCase()), color);
   assert.equal(new Set(COVER_PALETTES.map((p) => p.ground)).size, 6);
+});
+
+test("the top-bar chip names the night, never the account session", () => {
+  const session = {
+    id: "s",
+    establecimientoId: "e",
+    listaId: "l",
+    fechaOperativa: "2026-11-21",
+    abiertaAt: "2026-11-22T01:00:00Z",
+    cerradaAt: null,
+  };
+  const chip = (value: Parameters<typeof NightChip>[0]["session"]) =>
+    renderToStaticMarkup(createElement(NightChip, { session: value }));
+  assert.match(
+    chip(null),
+    /chip--off[^>]*><span class="chip__text">Noche sin abrir</,
+  );
+  assert.match(
+    chip({ ...session, estado: "ABIERTA" }),
+    /chip--live[^>]*><span class="chip__text">Noche abierta</,
+  );
+  assert.match(
+    chip({ ...session, estado: "PAUSADA" }),
+    /chip--paused[^>]*><span class="chip__text">Noche en pausa</,
+  );
+  for (const html of [chip(null), chip({ ...session, estado: "ABIERTA" })])
+    assert.doesNotMatch(html, /[Ss]esi[oó]n/);
+});
+
+test("empty states carry an icon, explanation and their next action", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      EmptyState,
+      {
+        title: "Todavía no hay solicitudes",
+        icon: createElement("svg"),
+        action: createElement("button", { type: "button" }, "Ver el QR"),
+      },
+      "Cuando alguien pida una canción, aparecerá aquí.",
+    ),
+  );
+  assert.match(html, /class="empty"/);
+  assert.match(html, /class="empty__icon" aria-hidden="true"/);
+  assert.match(html, /<button type="button">Ver el QR<\/button>/);
+  const plain = renderToStaticMarkup(
+    createElement(EmptyState, { title: "Sin datos" }),
+  );
+  assert.match(plain, /empty--plain/);
+});
+
+test("queue estimates and playback progress stay honest", () => {
+  const item = (wait: number, seconds: number | null) => ({
+    esperaEstimadaSegundos: wait,
+    cancion: { duracionSegundos: seconds },
+  });
+  assert.equal(drainSeconds([]), null);
+  assert.equal(drainSeconds([item(0, 200), item(200, 240)]), 440);
+  assert.equal(drainSeconds([item(300, null)]), 300);
+  assert.equal(approxDuration(10), "~ 1 min");
+  assert.equal(approxDuration(2400), "~ 40 min");
+  assert.equal(approxDuration(3900), "~ 1 h 05 min");
+  const playing = (seconds: number | null, left: number) => ({
+    solicitudId: null,
+    iniciadaAt: "2026-11-22T02:00:00Z",
+    restanteSegundos: left,
+    cancion: {
+      videoId: "abcdefghijk",
+      titulo: "Tema",
+      artista: "Artista",
+      artistaVerificado: false,
+      duracionSegundos: seconds,
+      miniaturaUrl: null,
+    },
+  });
+  assert.equal(playedShare(playing(200, 50)), 0.75);
+  assert.equal(playedShare(playing(200, 500)), 0);
+  assert.equal(playedShare(playing(null, 50)), null);
+  const html = renderToStaticMarkup(
+    createElement(NowPlaying, { playing: playing(200, 50) }),
+  );
+  assert.match(html, /--done:75%/);
+  assert.match(html, /Quedan ~ 1 min/);
+  assert.match(html, /class="eq eq--on"/);
 });

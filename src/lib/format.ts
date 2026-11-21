@@ -42,6 +42,28 @@ export function waitLabel(seconds: number | null | undefined) {
   return `Espera ~ ${Math.ceil(seconds / 60)} min`;
 }
 
+/**
+ * Estimated time until the last queued song finishes: its estimated wait plus
+ * its own duration (when known). Null when there is nothing queued.
+ */
+export function drainSeconds(
+  queue: {
+    esperaEstimadaSegundos: number;
+    cancion: { duracionSegundos: number | null };
+  }[],
+) {
+  const last = queue.at(-1);
+  if (!last) return null;
+  return last.esperaEstimadaSegundos + (last.cancion.duracionSegundos ?? 0);
+}
+
+/** "~ 40 min", "~ 1 h 05 min" for estimates shown as headline figures. */
+export function approxDuration(seconds: number) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes < 60) return `~ ${minutes} min`;
+  return `~ ${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}
+
 /** Operating date "2026-11-13" as "Noche del viernes 13 de noviembre". */
 export function nightLabel(operatingDate: string) {
   const date = new Date(`${operatingDate}T12:00:00Z`);

@@ -45,20 +45,30 @@ export function SkeletonRows({ count = 4 }: { count?: number }) {
   );
 }
 
+/** Empty area: what is missing and the one action that fills it. */
 export function EmptyState({
   title,
   children,
   action,
+  icon,
 }: {
   title: string;
   children?: ReactNode;
   action?: ReactNode;
+  icon?: ReactNode;
 }) {
   return (
-    <div className="empty">
-      <p className="empty__title">{title}</p>
-      {children && <p className="empty__text">{children}</p>}
-      {action}
+    <div className={`empty${icon ? "" : " empty--plain"}`}>
+      {icon && (
+        <span className="empty__icon" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      <div className="empty__body">
+        <p className="empty__title">{title}</p>
+        {children && <p className="empty__text">{children}</p>}
+        {action}
+      </div>
     </div>
   );
 }

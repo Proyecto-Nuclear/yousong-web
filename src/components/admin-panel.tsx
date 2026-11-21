@@ -8,29 +8,32 @@ import { nightLabel, plural } from "@/lib/format";
 import {
   OWNER_VIEW_SUBTITLE,
   ownerError,
-  NIGHT_NOT_OPEN,
   sessionNotice,
   OWNER_VIEWS as VIEW,
 } from "@/lib/owner-copy";
 import { timeZoneLabel } from "@/lib/time-zones";
 import {
-  ArrowRightIcon,
+  ArrowUpIcon,
   BrandMark,
   CheckIcon,
   CloseIcon,
+  ExternalIcon,
   HeadphonesIcon,
   LogoutIcon,
   PauseIcon,
   PlayIcon,
+  QrIcon,
   RefreshIcon,
   StopIcon,
   WrenchIcon,
 } from "./icons";
+import { Bunting } from "./owner/bunting";
 import { ConfirmDialog } from "./owner/confirm-dialog";
 import { EstablishmentForm } from "./owner/establishment-form";
 import { ErrorCallout, Loading } from "./owner/feedback";
 import { ListConfiguration } from "./owner/list-configuration";
 import { OwnerNavigation } from "./owner/navigation";
+import { NightChip } from "./owner/night-chip";
 import { QrCard } from "./owner/qr-card";
 import { QueuePanel } from "./owner/queue-panel";
 import { ThemeControls } from "./owner/theme-controls";
@@ -58,22 +61,6 @@ export function AdminPanel(props: { authenticated: boolean; roles: string[] }) {
         {...props}
       />
     </ToastProvider>
-  );
-}
-
-function StatusChip({ session }: { session: Session | null }) {
-  const tone =
-    session?.estado === "ABIERTA"
-      ? "chip--live"
-      : session?.estado === "PAUSADA"
-        ? "chip--paused"
-        : "chip--off";
-  return (
-    <span className={`chip chip--compact ${tone}`}>
-      <span className="chip__text">
-        {session ? sessionNotice(session.estado) : NIGHT_NOT_OPEN}
-      </span>
-    </span>
   );
 }
 
@@ -348,18 +335,19 @@ function AdminPanelContent({
       <header className="topbar">
         <a className="topbar__brand" href="/" aria-label="YouSong, inicio">
           <BrandMark size={30} />
+          <span className="topbar__word" aria-hidden="true">
+            YouSong
+          </span>
         </a>
         {selected && (
           <span className="venue">
-            <span className="venue__icon hide-xs">
-              <HeadphonesIcon size={18} />
-            </span>
+            <HeadphonesIcon size={18} className="venue__icon hide-xs" />
             <span className="venue__name">{selected.nombre}</span>
           </span>
         )}
         <span className="topbar__spacer" />
         <div className="topbar__actions">
-          {selected && <StatusChip session={loaded ? session : null} />}
+          {selected && <NightChip session={loaded ? session : null} />}
           <ThemeControls />
           {authenticated && (
             <form action={logout}>
@@ -394,8 +382,8 @@ function AdminPanelContent({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Vista de cliente
-                <ArrowRightIcon size={18} />
+                <ExternalIcon size={18} />
+                Abrir enlace de acceso
                 <span className="sr-only">(se abre en otra pestaña)</span>
               </a>
             )}
@@ -458,7 +446,8 @@ function AdminPanelContent({
             />
           )}
           {!api ? (
-            <section className="card signin" aria-labelledby="signin-title">
+            <section className="stage signin" aria-labelledby="signin-title">
+              <Bunting />
               <BrandMark size={44} className="signin__mark" />
               <h1 id="signin-title" className="signin__title">
                 {authenticated ? "Preparando tu local" : "Entra a tu panel"}
@@ -470,6 +459,22 @@ function AdminPanelContent({
                     : "No pudimos cargar tu local. Revisa la conexión y vuelve a intentarlo."
                   : "Abre la noche, comparte el QR y controla la cola que vota tu público."}
               </p>
+              {!authenticated && (
+                <ul className="signin__steps">
+                  <li>
+                    <PlayIcon size={20} />
+                    Abres la noche cuando empieza la música.
+                  </li>
+                  <li>
+                    <QrIcon size={20} />
+                    Tu público entra escaneando el QR.
+                  </li>
+                  <li>
+                    <ArrowUpIcon size={20} />
+                    Piden canciones y votan; tú ves la cola en vivo.
+                  </li>
+                </ul>
+              )}
               {authenticated ? (
                 <button
                   className="btn btn--primary"
@@ -524,23 +529,21 @@ function AdminPanelContent({
                   </details>
                 )}
                 {view === VIEW.PANEL && loaded && !session && (
-                  <div className="callout">
-                    <PlayIcon size={20} />
+                  <div className="callout callout--invite">
+                    <PlayIcon size={24} />
                     <div className="callout__body">
                       <p className="callout__title">La noche está sin abrir</p>
                       <p className="muted">
                         Ábrela para que tu público pueda unirse con el QR y
                         pedir canciones.
                       </p>
-                      <div>
-                        <button
-                          type="button"
-                          className="btn btn--small"
-                          onClick={() => go(VIEW.SESSION)}
-                        >
-                          Ir a Noche y QR
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--small"
+                        onClick={() => go(VIEW.SESSION)}
+                      >
+                        Ir a Noche y QR
+                      </button>
                     </div>
                   </div>
                 )}
@@ -730,6 +733,7 @@ function AdminPanelContent({
                     session={loaded ? session : null}
                     showPlaybackControls={view === VIEW.PANEL}
                     onShowAll={() => go(VIEW.QUEUE)}
+                    onShowQr={() => go(VIEW.SESSION)}
                   />
                 )}
               </>

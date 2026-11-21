@@ -842,6 +842,20 @@
     .stat__label svg {
       display: none;
     }
+    .stat__value {
+      font-size: 26px;
+      white-space: nowrap;
+    }
+    .stat__label {
+      line-height: 1.3;
+      min-height: 2.6em;
+    }
+  }
+
+  @media (max-width: 419px) {
+    .stat__value {
+      font-size: 22px;
+    }
   }
 
   /* Covers */
@@ -950,7 +964,13 @@
       padding: var(--s6) var(--s4) var(--s4);
     }
     .now {
-      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      gap: var(--s3) var(--s4);
+    }
+    .now__art .cover,
+    .now__disc {
+      width: 72px;
+      height: 72px;
     }
     .now__title {
       font-size: var(--fs-22);
@@ -1181,6 +1201,9 @@
     padding: var(--s5);
     border: 1px dashed var(--border);
     border-radius: var(--r-card);
+  }
+  .empty--plain {
+    grid-template-columns: minmax(0, 1fr);
   }
   .empty__icon {
     display: grid;
@@ -1714,6 +1737,32 @@
     justify-content: space-between;
     gap: var(--s3);
     flex-wrap: wrap;
+  }
+
+  /* Saved list versions */
+  .history {
+    display: grid;
+  }
+  .history__item {
+    display: grid;
+    grid-template-columns: 11ch minmax(0, 1fr) auto;
+    gap: var(--s3);
+    padding: var(--s2) 0;
+    color: var(--muted);
+    font-size: var(--fs-13);
+  }
+  .history__item + .history__item {
+    border-top: 1px solid var(--hairline);
+  }
+  .history__version {
+    color: var(--text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .history__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Disclosure */

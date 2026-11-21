@@ -10,6 +10,9 @@ import { ErrorCallout, Loading } from "./feedback";
 import { useOwnerOperation } from "./operation";
 import { SongResultRow, SongSuggestion } from "./song-result";
 
+/** Id of the catalog search input, so empty states can focus it. */
+export const CATALOG_SEARCH_ID = "catalog-search";
+
 export function CatalogPicker({
   api,
   onPick,
@@ -83,6 +86,7 @@ export function CatalogPicker({
         <label className="field">
           <span className="field__label">Buscar por título o artista</span>
           <input
+            id={CATALOG_SEARCH_ID}
             className="input"
             type="search"
             value={query}

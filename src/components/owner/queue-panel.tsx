@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { type CSSProperties, useEffect, useEffectEvent, useState } from "react";
 import type { Establishment, Session } from "../../lib/admin-api";
 import type { DemoApi } from "../../lib/demo-api";
 import {
@@ -13,8 +13,10 @@ import {
   SERVICE,
 } from "../../lib/demo-contracts";
 import {
+  approxDuration,
+  drainSeconds,
+  formatDuration,
   plural,
-  songMeta,
   updatedLabel,
   votesLabel,
   waitLabel,
@@ -24,14 +26,17 @@ import { Cover } from "../cover";
 import {
   AlertIcon,
   ArrowUpIcon,
+  ClockIcon,
   DiscIcon,
-  PlayIcon,
+  QrIcon,
   QueueIcon,
   SkipIcon,
   StopIcon,
 } from "../icons";
+import { Bunting } from "./bunting";
 import { EmptyState, ErrorCallout, SkeletonRows } from "./feedback";
 import { useOwnerOperation } from "./operation";
+import { SongMeta } from "./song-meta";
 
 const PANEL_ROWS = 8;
 
@@ -67,13 +72,23 @@ function QueueRow({ item, first }: { item: QueueItem; first: boolean }) {
       </span>
       <Cover title={song.titulo} />
       <div className="queue-row__body">
+        {first && (
+          <span className="queue-row__next" aria-hidden="true">
+            Sigue
+          </span>
+        )}
         <h3 className="queue-row__title">
-          <span className="sr-only">Puesto {item.posicion}: </span>
+          <span className="sr-only">
+            Puesto {item.posicion}
+            {first ? ", sigue" : ""}:{" "}
+          </span>
           {song.titulo}
         </h3>
-        <p className="queue-row__meta">
-          {songMeta(song.artista, song.duracionSegundos)}
-        </p>
+        <SongMeta
+          artist={song.artista}
+          genre={song.genero}
+          seconds={song.duracionSegundos}
+        />
         <p className="queue-row__wait">
           {waitLabel(item.esperaEstimadaSegundos)}
         </p>
@@ -111,6 +126,14 @@ export function Equalizer({ on }: { on: boolean }) {
   );
 }
 
+/** Static share of the song already played; null when the duration is unknown. */
+export function playedShare(playing: Playing) {
+  const total = playing.cancion.duracionSegundos;
+  if (!total) return null;
+  const done = (total - playing.restanteSegundos) / total;
+  return Math.min(1, Math.max(0, done));
+}
+
 export function NowPlaying({
   playing,
   hint,
@@ -122,7 +145,7 @@ export function NowPlaying({
     return (
       <div className="now">
         <span className="now__disc">
-          <DiscIcon size={32} />
+          <DiscIcon size={36} />
         </span>
         <div>
           <p className="now__eyebrow">Sin reproducción activa</p>
@@ -133,49 +156,85 @@ export function NowPlaying({
     );
   const song = playing.cancion;
   const left = playing.restanteSegundos;
+  const share = playedShare(playing);
+  const total = song.duracionSegundos ?? 0;
   return (
-    <div className="now">
-      <Cover title={song.titulo} size={88} />
+    <div className="now now--live">
+      <span className="now__art">
+        <Cover title={song.titulo} size={120} />
+      </span>
       <div>
         <p className="now__eyebrow">
           <Equalizer on />
           En reproducción
         </p>
         <h2 className="now__title">{song.titulo}</h2>
-        <p className="now__meta">
-          {songMeta(song.artista, song.duracionSegundos)}
-        </p>
-        <p className="now__hint tabular">
-          {left > 0
-            ? `Quedan ~ ${Math.ceil(left / 60)} min`
-            : "Ya debería estar terminando"}
-        </p>
+        <SongMeta
+          artist={song.artista}
+          genre={song.genero}
+          seconds={song.duracionSegundos}
+        />
+        {share === null ? (
+          <p className="now__hint tabular">
+            {left > 0
+              ? `Quedan ~ ${Math.ceil(left / 60)} min`
+              : "Ya debería estar terminando"}
+          </p>
+        ) : (
+          <div className="progress">
+            <span className="progress__track" aria-hidden="true">
+              <span
+                className="progress__fill"
+                style={
+                  { "--done": `${Math.round(share * 100)}%` } as CSSProperties
+                }
+              />
+            </span>
+            <p className="progress__text">
+              <span>
+                <span className="sr-only">Sonó </span>
+                {formatDuration(total - left)}
+              </span>
+              <span>
+                {left > 0
+                  ? `Quedan ~ ${Math.ceil(left / 60)} min`
+                  : "Ya debería estar terminando"}
+              </span>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function Kpis({ snapshot }: { snapshot: Queue | null }) {
+function Stats({ snapshot }: { snapshot: Queue | null }) {
   const votes = snapshot?.cola.reduce((sum, item) => sum + item.votos, 0);
-  const playing = snapshot?.enReproduccion?.cancion.titulo;
+  const drain = snapshot ? drainSeconds(snapshot.cola) : null;
   return (
-    <section className="grid-kpi" aria-label="Resumen de la noche">
-      <div className="kpi">
-        <QueueIcon className="kpi__icon" size={22} />
-        <p className="kpi__value">{snapshot ? snapshot.cola.length : "–"}</p>
-        <p className="kpi__label">Solicitudes en cola</p>
-      </div>
-      <div className="kpi">
-        <ArrowUpIcon className="kpi__icon" size={22} />
-        <p className="kpi__value">{votes ?? "–"}</p>
-        <p className="kpi__label">Votos en cola</p>
-      </div>
-      <div className="kpi">
-        <PlayIcon className="kpi__icon" size={22} />
-        <p className={`kpi__value kpi__value--text${playing ? "" : " muted"}`}>
-          {snapshot ? (playing ?? "Nada suena ahora") : "–"}
+    <section className="stats" aria-label="Resumen de la noche">
+      <div className="stat">
+        <p className="stat__label">
+          <QueueIcon size={16} />
+          Solicitudes en cola
         </p>
-        <p className="kpi__label">En reproducción</p>
+        <p className="stat__value">{snapshot ? snapshot.cola.length : "–"}</p>
+      </div>
+      <div className="stat">
+        <p className="stat__label">
+          <ArrowUpIcon size={16} />
+          Votos en cola
+        </p>
+        <p className="stat__value">{votes ?? "–"}</p>
+      </div>
+      <div className="stat">
+        <p className="stat__label">
+          <ClockIcon size={16} />
+          Para vaciar la cola
+        </p>
+        <p className="stat__value">
+          {!snapshot ? "–" : drain === null ? "0 min" : approxDuration(drain)}
+        </p>
       </div>
     </section>
   );
@@ -203,12 +262,15 @@ export function QueuePanel({
   session,
   showPlaybackControls = false,
   onShowAll,
+  onShowQr,
 }: {
   api: DemoApi;
   establishment: Establishment;
   session: Session | null;
   showPlaybackControls?: boolean;
   onShowAll?: () => void;
+  /** Navigates to Noche y QR (empty queue next action). */
+  onShowQr?: () => void;
 }) {
   const [snapshot, setSnapshot] = useState<Queue | null>(null);
   const [readAt, setReadAt] = useState(0);
@@ -323,7 +385,9 @@ export function QueuePanel({
             <span className="status-line">Actualización automática</span>
           )}
           {snapshot && (
-            <span className="chip">{plural(pending, "pendiente")}</span>
+            <span className={`chip${pending ? " chip--accent" : ""}`}>
+              {plural(pending, "pendiente")}
+            </span>
           )}
         </div>
       </div>
@@ -364,7 +428,21 @@ export function QueuePanel({
             )}
           </>
         ) : (
-          <EmptyState title="Todavía no hay solicitudes">
+          <EmptyState
+            title="Todavía no hay solicitudes"
+            icon={<QrIcon size={22} />}
+            action={
+              onShowQr && (
+                <button
+                  type="button"
+                  className="btn btn--small"
+                  onClick={onShowQr}
+                >
+                  {session ? "Ver el QR" : "Ir a Noche y QR"}
+                </button>
+              )
+            }
+          >
             {session
               ? "Cuando alguien escanee el QR y pida una canción, aparecerá aquí con sus votos."
               : "Abre la noche y comparte el QR para que tu público empiece a pedir canciones."}
@@ -384,7 +462,11 @@ export function QueuePanel({
   if (!showPlaybackControls)
     return (
       <div className="stack stack--loose">
-        <section className="card" aria-label="En reproducción">
+        <section
+          className={`stage${playing ? " stage--live" : ""}`}
+          aria-label="En reproducción"
+        >
+          <Bunting />
           <NowPlaying playing={playing} />
         </section>
         {queueCard}
@@ -393,9 +475,13 @@ export function QueuePanel({
 
   return (
     <div className="stack stack--loose">
-      <Kpis snapshot={snapshot} />
+      <Stats snapshot={snapshot} />
       <div className="grid-live">
-        <section className="card" aria-label="En reproducción">
+        <section
+          className={`stage${playing ? " stage--live" : ""}`}
+          aria-label="En reproducción"
+        >
+          <Bunting />
           <NowPlaying
             playing={playing}
             hint={
