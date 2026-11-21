@@ -91,7 +91,7 @@
     --success-tint: #ddf3ef;
     --warn: #7a4b00;
     --warn-tint: #fff1d6;
-    --tag: #ece6f6;
+    --tag: #ddd3ef;
     --tag-text: #3f3659;
     --lilac: #8f74f0;
     --scrim: rgb(27 21 48 / 0.45);
@@ -487,6 +487,14 @@
   .btn--primary:hover:not(:disabled) {
     background: var(--accent);
     filter: brightness(1.06);
+  }
+  /* Disabled actions read as unavailable, not as a dimmed mango. */
+  .btn--primary:disabled,
+  .btn--primary[aria-disabled="true"] {
+    opacity: 1;
+    background: var(--raised);
+    border-color: var(--hairline);
+    color: var(--muted);
   }
   .btn--ghost {
     border-color: transparent;
@@ -1514,6 +1522,12 @@
   .segmented__option:has(input:disabled) {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .segmented__option:has(input:checked:disabled) {
+    opacity: 1;
+    background: var(--raised);
+    border-color: var(--border);
+    color: var(--muted);
   }
   /* Compact segmented control for filters (period selector) */
   .segmented--compact .segmented__options {

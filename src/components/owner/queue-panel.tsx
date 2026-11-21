@@ -485,7 +485,7 @@ export function QueuePanel({
           <NowPlaying
             playing={playing}
             hint={
-              snapshot && !playing
+              snapshot?.cola.length && !playing
                 ? "Usa Siguiente canción para que suene la primera de la cola."
                 : undefined
             }

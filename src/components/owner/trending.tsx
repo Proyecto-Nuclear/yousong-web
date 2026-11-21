@@ -91,8 +91,7 @@ export function TrendingSongs({
         )}
       </div>
       <p className="field__hint">
-        Lo más escuchado en YouTube en Colombia. Añadir una canción solo cambia
-        tu borrador.
+        Lo más escuchado en YouTube en Colombia, para completar tu lista.
       </p>
       {state.kind === "loading" || state.kind === "idle" ? (
         <>
