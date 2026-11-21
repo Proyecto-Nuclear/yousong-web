@@ -18,7 +18,12 @@ import {
 } from "../src/lib/demo-contracts";
 import { OperationGate } from "../src/lib/demo-operation";
 import { ListDraft } from "../src/lib/list-draft";
-import { OWNER_VIEWS, ownerError, sessionNotice } from "../src/lib/owner-copy";
+import {
+  NIGHT_NOT_OPEN,
+  OWNER_VIEWS,
+  ownerError,
+  sessionNotice,
+} from "../src/lib/owner-copy";
 import {
   type RefreshClock,
   refreshQueue,
@@ -28,7 +33,7 @@ import {
 test("owner navigation keeps one place to search and save the local list", () => {
   assert.deepEqual(Object.values(OWNER_VIEWS), [
     "Panel operativo",
-    "Sesión y QR",
+    "Noche y QR",
     "Cola musical",
     "Configuración y listas",
   ]);
@@ -103,13 +108,21 @@ test("owner copy preserves session distinctions and hides unexpected diagnostic 
   assert.deepEqual(
     ["ABIERTA", "PAUSADA", "CERRANDO", "CERRADA", "unknown"].map(sessionNotice),
     [
-      "Sesión activa",
-      "Sesión en pausa",
-      "Finalizando sesión",
-      "Sesión finalizada",
+      "Noche abierta",
+      "Noche en pausa",
+      "Cerrando la noche",
+      "Noche cerrada",
       "Estado por confirmar",
     ],
   );
+  // The night is never called "sesión": owners read it as their login.
+  assert.equal(NIGHT_NOT_OPEN, "Noche sin abrir");
+  for (const text of [
+    NIGHT_NOT_OPEN,
+    ...Object.values(OWNER_VIEWS),
+    ...["ABIERTA", "PAUSADA", "CERRANDO", "CERRADA"].map(sessionNotice),
+  ])
+    assert.doesNotMatch(text, /sesi[oó]n/i);
   assert.equal(
     ownerError(Error("private diagnostic")),
     "No pudimos confirmar la acción. Actualiza el estado antes de intentarlo otra vez.",

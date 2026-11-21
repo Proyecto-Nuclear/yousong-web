@@ -39,7 +39,7 @@ export function waitLabel(seconds: number | null | undefined) {
 /** Operating date "2026-11-13" as "Noche del viernes 13 de noviembre". */
 export function nightLabel(operatingDate: string) {
   const date = new Date(`${operatingDate}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return "Sesión de esta noche";
+  if (Number.isNaN(date.getTime())) return "Noche de hoy";
   const text = date.toLocaleDateString("es", {
     weekday: "long",
     day: "numeric",

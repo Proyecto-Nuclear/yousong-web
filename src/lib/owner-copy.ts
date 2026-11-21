@@ -1,6 +1,6 @@
 export const OWNER_VIEWS = {
   PANEL: "Panel operativo",
-  SESSION: "Sesión y QR",
+  SESSION: "Noche y QR",
   QUEUE: "Cola musical",
   SETUP: "Configuración y listas",
 } as const;
@@ -8,7 +8,7 @@ export const OWNER_VIEWS = {
 /** Short labels for the phone tab bar, keyed by the full view name. */
 export const OWNER_VIEW_SHORT: Record<string, string> = {
   [OWNER_VIEWS.PANEL]: "Panel",
-  [OWNER_VIEWS.SESSION]: "Sesión",
+  [OWNER_VIEWS.SESSION]: "Noche",
   [OWNER_VIEWS.QUEUE]: "Cola",
   [OWNER_VIEWS.SETUP]: "Ajustes",
 };
@@ -40,17 +40,16 @@ const MESSAGES = {
   playing:
     "Ya hay una canción sonando. Termínala antes de pasar a la siguiente.",
   notPlaying: "No hay una canción sonando. Revisa la cola.",
-  noList:
-    "Guarda una lista en Configuración y listas antes de abrir la sesión.",
+  noList: "Guarda una lista en Configuración y listas antes de abrir la noche.",
   slugTaken: "Ese enlace del QR ya lo usa otro local. Prueba con otro.",
   timeZone: "Elige una zona horaria de la lista.",
-  sessionInProgress: "Finaliza la sesión antes de desactivar el local.",
-  sessionOpen: "Ya hay una sesión abierta. Actualiza el estado.",
-  sessionClosed: "La sesión ya terminó. Actualiza el estado.",
-  paused: "La sesión está en pausa. Reanúdala para seguir.",
+  sessionInProgress: "Cierra la noche antes de desactivar el local.",
+  sessionOpen: "La noche ya está abierta. Actualiza el estado.",
+  sessionClosed: "La noche ya se cerró. Actualiza el estado.",
+  paused: "La noche está en pausa. Reanúdala para seguir.",
   servicePaused:
-    "El servicio del local está en pausa. Reanúdalo en Sesión y QR.",
-  maintenance: "El local está en mantenimiento. Termínalo en Sesión y QR.",
+    "El servicio del local está en pausa. Reanúdalo en Noche y QR.",
+  maintenance: "El local está en mantenimiento. Termínalo en Noche y QR.",
   inactive: "El local está desactivado. Actívalo en Configuración y listas.",
   rate: "Demasiadas acciones seguidas. Espera un momento y vuelve a intentarlo.",
   offline:
@@ -109,11 +108,18 @@ export function ownerError(reason: unknown): string {
   return rules.find(([pattern]) => pattern.test(text))?.[1] ?? MESSAGES.generic;
 }
 
-/** Session (music night) state as shown in chips; never the account login. */
+/**
+ * The music night's state as shown in chips. Owners read "sesión" as their
+ * account login, so the night is always called "noche"; the account keeps
+ * "Salir de la cuenta".
+ */
 export function sessionNotice(state: string): string {
-  if (state === "ABIERTA") return "Sesión activa";
-  if (state === "PAUSADA") return "Sesión en pausa";
-  if (state === "CERRANDO") return "Finalizando sesión";
-  if (state === "CERRADA") return "Sesión finalizada";
+  if (state === "ABIERTA") return "Noche abierta";
+  if (state === "PAUSADA") return "Noche en pausa";
+  if (state === "CERRANDO") return "Cerrando la noche";
+  if (state === "CERRADA") return "Noche cerrada";
   return "Estado por confirmar";
 }
+
+/** Chip text when no night is open (or it is still loading). */
+export const NIGHT_NOT_OPEN = "Noche sin abrir";

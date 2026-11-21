@@ -14,7 +14,7 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "YouSong · Panel del local",
   description:
-    "Panel para dueños de bares: abre la sesión, comparte el QR y controla la cola musical que vota tu público.",
+    "Panel para dueños de bares: abre la noche, comparte el QR y controla la cola musical que vota tu público.",
   applicationName: "YouSong",
 };
 

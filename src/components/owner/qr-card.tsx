@@ -47,7 +47,7 @@ export function QrCard({ qr }: { qr: Qr }) {
             {/* biome-ignore lint/performance/noImgElement: API SVG blob must not use the image optimizer. */}
             <img
               src={source}
-              alt="Código QR para unirse a la sesión del local"
+              alt="Código QR para unirse a la noche del local"
               width={200}
               height={200}
               referrerPolicy="no-referrer"
@@ -58,8 +58,8 @@ export function QrCard({ qr }: { qr: Qr }) {
         )}
       </div>
       <p className="qr-card__text">
-        Quien lo escanee con la cámara del celular entra a la sesión de esta
-        noche. Solo acepta pedidos mientras la sesión está abierta.
+        Quien lo escanee con la cámara del celular entra a la noche de hoy. Solo
+        acepta pedidos mientras la noche está abierta.
       </p>
       {loopback(qr.url) && (
         <p className="status-line">

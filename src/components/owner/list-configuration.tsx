@@ -60,7 +60,7 @@ export function ListConfiguration({
             Lista predeterminada
           </h2>
           <p className="card__meta">
-            Suena cuando nadie ha pedido canciones. Se usa al abrir la sesión.
+            Suena cuando nadie ha pedido canciones. Se usa al abrir la noche.
           </p>
         </div>
         <span className="chip">{songsLabel(state.songs.length)}</span>
@@ -148,7 +148,7 @@ export function ListConfiguration({
                 {state.loaded && !state.songs.length ? (
                   <EmptyState title="Tu lista está vacía">
                     Busca canciones abajo y añádelas. Necesitas al menos una
-                    para abrir la sesión.
+                    para abrir la noche.
                   </EmptyState>
                 ) : (
                   <ol className="song-list" aria-label="Canciones del borrador">

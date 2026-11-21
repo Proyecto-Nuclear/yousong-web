@@ -297,9 +297,9 @@ export function QueuePanel({
     snapshot?.estado === SERVICE.OPEN &&
     !playing;
   const reason = !session
-    ? "Abre la sesión en Sesión y QR para controlar la reproducción."
+    ? "Abre la noche en Noche y QR para controlar la reproducción."
     : session.estado === "PAUSADA"
-      ? "La sesión está en pausa: reanúdala para pasar de canción."
+      ? "La noche está en pausa: reanúdala para pasar de canción."
       : establishment.pausado || establishment.enMantenimiento
         ? "El servicio del local no está disponible ahora."
         : "";
@@ -367,7 +367,7 @@ export function QueuePanel({
           <EmptyState title="Todavía no hay solicitudes">
             {session
               ? "Cuando alguien escanee el QR y pida una canción, aparecerá aquí con sus votos."
-              : "Abre la sesión y comparte el QR para que tu público empiece a pedir canciones."}
+              : "Abre la noche y comparte el QR para que tu público empiece a pedir canciones."}
           </EmptyState>
         )
       ) : (

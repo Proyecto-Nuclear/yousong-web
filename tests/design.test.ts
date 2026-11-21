@@ -99,15 +99,15 @@ test("vote count is a non-interactive display with a spoken label", () => {
   assert.doesNotMatch(html, /<button|votes--pulse/);
 });
 
-test("end-session dialog is a labelled native dialog naming the consequence", () => {
+test("close-night dialog is a labelled native dialog naming the consequence", () => {
   const html = renderToStaticMarkup(
     createElement(
       ConfirmDialog,
       {
         open: false,
-        title: "¿Finalizar la sesión de esta noche?",
-        confirmLabel: "Finalizar sesión",
-        cancelLabel: "Seguir con la sesión",
+        title: "¿Cerrar la noche?",
+        confirmLabel: "Cerrar la noche",
+        cancelLabel: "Seguir con la noche",
         onConfirm() {},
         onCancel() {},
       },
@@ -118,11 +118,11 @@ test("end-session dialog is a labelled native dialog naming the consequence", ()
   assert.match(html, /aria-labelledby="[^"]+"/);
   assert.match(html, /aria-describedby="[^"]+"/);
   assert.match(html, /perderán el acceso/);
-  assert.match(html, /btn--danger[^>]*>Finalizar sesión</);
+  assert.match(html, /btn--danger[^>]*>Cerrar la noche</);
   // Only the safe choice carries autofocus (showModal focuses it).
   assert.match(
     html,
-    /<button[^>]*autofocus=""[^>]*>Seguir con la sesión<\/button>/,
+    /<button[^>]*autofocus=""[^>]*>Seguir con la noche<\/button>/,
   );
   assert.equal((html.match(/autofocus=""/g) ?? []).length, 1);
 });
