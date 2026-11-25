@@ -1879,6 +1879,12 @@
   .rank:first-child .rank__pos {
     color: var(--accent-text);
   }
+  .rank__thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-control);
+    object-fit: cover;
+  }
   .rank__body {
     display: grid;
     gap: 4px;

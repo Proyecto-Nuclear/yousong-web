@@ -320,3 +320,23 @@ test("the tab bar holds five entries including Analítica", () => {
   assert.equal((html.match(/<button/g) ?? []).length, 5);
   assert.match(html, /aria-label="Analítica" aria-current="page"/);
 });
+
+test("ranked songs show their YouTube thumbnail, else the generated cover", () => {
+  const render = (miniaturaUrl: string | null) =>
+    renderToStaticMarkup(
+      createElement(HighlightsView, {
+        now: 0,
+        data: {
+          periodoDias: 30,
+          masVotadas: [{ cancion: { ...song("Uno"), miniaturaUrl }, votos: 2 }],
+          masPedidas: [],
+          masSonadas: [],
+          ultimasSonadas: [],
+        },
+      }),
+    );
+  const url = "https://i.ytimg.com/vi/kRt2sRyup6A/mqdefault.jpg";
+  assert.match(render(url), new RegExp(`<img[^>]+src="${url}"`));
+  assert.doesNotMatch(render(null), /<img/);
+  assert.doesNotMatch(render("https://evil.example/a.jpg"), /<img/);
+});

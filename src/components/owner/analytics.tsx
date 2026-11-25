@@ -16,6 +16,7 @@ import {
   PERIODS,
   type QueueSong,
 } from "../../lib/demo-contracts";
+import { safeThumbnailUrl } from "../../lib/thumbnail";
 import { Cover } from "../cover";
 import { ChartIcon } from "../icons";
 import { EmptyState, ErrorCallout, SkeletonRows } from "./feedback";
@@ -48,6 +49,25 @@ function Bar({
   );
 }
 
+/** Square crop of the YouTube thumbnail; the generated cover stands in when there is none. */
+function RankCover({ song }: { song: QueueSong }) {
+  const [failed, setFailed] = useState(false);
+  const src = failed ? null : safeThumbnailUrl(song.miniaturaUrl);
+  if (!src) return <Cover title={song.titulo} size={40} />;
+  return (
+    // biome-ignore lint/performance/noImgElement: remote YouTube thumbnails are validated and must not go through the image optimizer
+    <img
+      className="rank__thumb"
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function RankRow({
   position,
   song,
@@ -62,7 +82,7 @@ function RankRow({
       <span className="rank__pos" aria-hidden="true">
         {position}
       </span>
-      <Cover title={song.titulo} size={40} />
+      <RankCover song={song} />
       <div className="rank__body">
         <p className="rank__title" title={song.titulo}>
           <span className="sr-only">{position}. </span>
