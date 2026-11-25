@@ -178,6 +178,11 @@ test("highlights errors become friendly owner messages", async () => {
     [400, "INVALID_PERIOD", "Elige un periodo de 7, 30 o 90 días."],
     [
       404,
+      "ESTABLISHMENT_NOT_FOUND",
+      "No encontramos los datos de tu local. Actualiza el estado.",
+    ],
+    [
+      404,
       "NOT_FOUND",
       "No encontramos los datos de tu local. Actualiza el estado.",
     ],
