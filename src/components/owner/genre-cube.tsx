@@ -1,6 +1,12 @@
 "use client";
 
-import { type CSSProperties, type PointerEvent, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type PointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type CubeModel,
   cellAt,
@@ -8,7 +14,10 @@ import {
   hourLabel,
 } from "../../lib/analytics-insights";
 
-const DEFAULT_VIEW = { rx: -24, ry: 34 };
+const DEFAULT_VIEW = { rx: -28, ry: -30 };
+/** On phones the stack recedes almost straight up so the z labels stay apart. */
+const PHONE_VIEW = { rx: -36, ry: -12 };
+const PHONE = "(max-width: 599px)";
 const STEP = 15;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -22,7 +31,7 @@ function heat(value: number | null, max: number) {
 /**
  * Chart 9 as a cube: hours (x) by genres (y) by nights (z). The front layer
  * is the night from the live endpoint; the published nights stack behind.
- * Choosing a night slides the stack so that night sits in front for reading.
+ * Choosing a night peels away the layers in front of it so it can be read.
  */
 export function GenreCube({
   model,
@@ -69,13 +78,20 @@ export function GenreCube({
   const endDrag = () => {
     drag.current = null;
   };
+  useEffect(() => {
+    if (window.matchMedia(PHONE).matches) setView(PHONE_VIEW);
+  }, []);
+  const home = () =>
+    typeof window !== "undefined" && window.matchMedia(PHONE).matches
+      ? PHONE_VIEW
+      : DEFAULT_VIEW;
   const layer = model.layers[selected];
   const style = {
     "--rx": `${view.rx}deg`,
     "--ry": `${view.ry}deg`,
     "--cols": model.hours.length,
     "--rows": model.genres.length,
-    "--front": selected,
+    "--layers": model.layers.length,
   } as CSSProperties;
   return (
     <div className={`cube${reducedMotion ? " cube--still" : ""}`}>
@@ -105,6 +121,18 @@ export function GenreCube({
         onPointerCancel={endDrag}
       >
         <div aria-hidden="true" className="cube__scene">
+          {/* The z axis: one tick per night along the cube's top-left edge. */}
+          <span className="cube__zaxis" />
+          {model.layers.map((item, index) => (
+            <span
+              key={`z:${item.id}`}
+              className={`cube__ztick${index === selected ? " cube__ztick--front" : index < selected ? " cube__ztick--peeled" : ""}${item.live ? " cube__ztick--live" : ""}`}
+              style={{ "--i": index } as CSSProperties}
+            >
+              {item.label}
+              {item.live && <span className="cube__zlive"> · en vivo</span>}
+            </span>
+          ))}
           {model.layers.map((item, index) => {
             const state =
               index < selected
@@ -112,17 +140,19 @@ export function GenreCube({
                 : index === selected
                   ? "front"
                   : "back";
+            const front = state === "front";
             return (
               <div
                 key={item.id}
                 className={`cube__layer cube__layer--${state}${item.live ? " cube__layer--live" : ""}`}
-                style={{ "--i": index } as CSSProperties}
+                style={
+                  {
+                    "--i": index,
+                    "--k": Math.abs(index - selected),
+                  } as CSSProperties
+                }
               >
-                <span className="cube__zlabel">
-                  {item.label}
-                  {item.live ? " · en vivo" : ""}
-                </span>
-                {state === "front" && (
+                {front && (
                   <>
                     {model.genres.map((genre, row) => (
                       <span
@@ -151,6 +181,11 @@ export function GenreCube({
                 {model.genres.map((genre, row) =>
                   model.hours.map((h, col) => {
                     const cell = cellAt(item, genre, h);
+                    // Behind the front only cells with a visible share are
+                    // drawn, so the stack recedes as clean colored blocks.
+                    const filled =
+                      !!cell && !cell.suprimida && (cell.porcentaje ?? 0) > 0;
+                    if (!front && !filled) return null;
                     const value = heat(cell?.porcentaje ?? null, model.max);
                     return (
                       <span
@@ -164,7 +199,18 @@ export function GenreCube({
                           } as CSSProperties
                         }
                       >
-                        {state === "front" && cell ? cellLabel(cell) : ""}
+                        {front && cell && (
+                          <>
+                            <span className="cube__value">
+                              {cellLabel(cell)}
+                            </span>
+                            <span className="cube__short">
+                              {cell.suprimida
+                                ? "<5"
+                                : Math.round(cell.porcentaje ?? 0)}
+                            </span>
+                          </>
+                        )}
                       </span>
                     );
                   }),
@@ -210,6 +256,13 @@ export function GenreCube({
           onClick={() => setView({ rx: 0, ry: 0 })}
         >
           Vista de frente
+        </button>
+        <button
+          type="button"
+          className="btn btn--small btn--muted"
+          onClick={() => setView(home())}
+        >
+          Vista en cubo
         </button>
       </fieldset>
       <p className="cube__key">

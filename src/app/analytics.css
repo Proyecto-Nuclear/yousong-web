@@ -858,30 +858,39 @@
     outline-offset: 3px;
   }
 
+  /*
+   * Geometry: every night is a grid layer pushed back by --depth. The z axis
+   * runs along the top-left edge (one tick label per night, right aligned in
+   * the genre column), so each label sits above its own layer and clear of
+   * the layers behind it. --depth is large enough that, at the default view,
+   * consecutive labels are at least one text line apart.
+   */
   .cube__stage {
-    --label-w: 104px;
-    --zlabel-w: 84px;
-    --depth: 22px;
+    --label-w: 112px;
+    --depth: 46px;
     --gap: 3px;
+    --zroom: calc((var(--layers) - 1) * var(--depth) * 0.55);
     --cell: clamp(
-      28px,
-      calc((100cqw - var(--label-w) - var(--zlabel-w) - 24px) / var(--cols)),
+      30px,
+      calc((100cqw - var(--label-w) - var(--zroom) - 32px) / var(--cols)),
       64px
     );
     container-type: inline-size;
     display: grid;
-    justify-items: center;
-    padding: calc(var(--depth) * 4) 0 calc(var(--depth) * 3);
+    justify-items: start;
+    padding: calc((var(--layers) - 1) * var(--depth) * 0.42 + 40px) 16px
+      calc(var(--rows) * var(--cell) * 0.35 + 48px);
     overflow: hidden;
     border-radius: var(--r-control);
     background:
       radial-gradient(
-        ellipse at 50% 40%,
-        color-mix(in oklab, var(--accent) 8%, transparent),
+        ellipse at 40% 60%,
+        color-mix(in oklab, var(--accent) 7%, transparent),
         transparent 70%
       ),
       var(--bg);
-    perspective: 1400px;
+    perspective: 2400px;
+    perspective-origin: 40% 60%;
     touch-action: none;
     cursor: grab;
     user-select: none;
@@ -891,39 +900,30 @@
   }
   .cube__scene {
     position: relative;
-    width: calc(
-      var(--label-w) +
-      var(--cols) *
-      (var(--cell) + var(--gap)) +
-      var(--zlabel-w)
-    );
+    width: calc(var(--label-w) + var(--cols) * (var(--cell) + var(--gap)));
     height: calc(var(--rows) * (var(--cell) + var(--gap)) + 28px);
     transform-style: preserve-3d;
-    transform: rotateX(var(--rx)) rotateY(var(--ry))
-      translateZ(calc(var(--front) * var(--depth)));
+    transform-origin: var(--label-w) 0;
+    transform: rotateX(var(--rx)) rotateY(var(--ry));
     transition: transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
   .cube__layer {
     position: absolute;
     inset: 0;
     display: grid;
-    grid-template-columns: var(--label-w) repeat(var(--cols), var(--cell)) var(
-        --zlabel-w
-      );
+    grid-template-columns: var(--label-w) repeat(var(--cols), var(--cell));
     grid-template-rows: repeat(var(--rows), var(--cell)) 28px;
     gap: var(--gap);
     transform: translateZ(calc(var(--i) * var(--depth) * -1));
     transition: opacity 320ms ease;
     pointer-events: none;
   }
+  /* Behind the front: filled cells only, fading with distance. */
   .cube__layer--back {
-    opacity: 0.5;
-  }
-  .cube__layer--back ~ .cube__layer--back {
-    opacity: 0.32;
+    opacity: max(0.14, calc(0.62 - var(--k) * 0.07));
   }
   .cube__layer--peeled {
-    opacity: 0.07;
+    opacity: 0.06;
   }
   .cube__cell {
     display: grid;
@@ -940,27 +940,24 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  .cube__layer--front .cube__cell {
+    box-shadow: 0 0 0 1px var(--bg);
+  }
   .cube__cell--hot {
     color: #1b1530;
   }
   .cube__cell--hidden {
     border: 1px dashed var(--border);
-    background: transparent;
+    background: var(--bg);
     color: var(--muted);
     font-weight: 700;
   }
   .cube__cell--none {
-    background: transparent;
     border: 1px solid var(--hairline);
-    color: var(--muted);
+    background: var(--bg);
   }
-  .cube__layer--back .cube__cell,
-  .cube__layer--peeled .cube__cell {
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--text) 10%, transparent);
-  }
-  .cube__layer--front .cube__cell {
-    box-shadow: 0 0 0 1px var(--bg);
+  .cube__short {
+    display: none;
   }
   .cube__ylabel {
     grid-column: 1;
@@ -981,21 +978,62 @@
     text-align: center;
     white-space: nowrap;
   }
-  .cube__zlabel {
-    grid-row: 1;
-    grid-column: -2;
-    align-self: center;
-    padding-left: var(--s2);
+
+  /* z axis: an edge running back from the top-left corner, ticked per night. */
+  .cube__zaxis {
+    position: absolute;
+    top: -18px;
+    left: calc(var(--label-w) - 2px);
+    width: calc((var(--layers) - 1) * var(--depth));
+    height: 2px;
+    border-radius: 1px;
+    background: var(--border);
+    transform-origin: 0 50%;
+    transform: rotateY(90deg);
+  }
+  .cube__ztick {
+    position: absolute;
+    top: -24px;
+    right: calc(100% - var(--label-w) + 4px);
+    padding-right: var(--s2);
     color: var(--muted);
     font-size: var(--fs-12);
     font-weight: 700;
+    line-height: 14px;
+    text-align: right;
     white-space: nowrap;
+    transform: translateZ(calc(var(--i) * var(--depth) * -1));
   }
-  .cube__layer--front .cube__zlabel {
+  .cube__ztick::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -3px;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: var(--r-pill);
+    background: var(--border);
+  }
+  .cube__ztick--peeled {
+    opacity: 0.45;
+  }
+  .cube__ztick--front {
     color: var(--accent-text);
+    font-weight: 800;
   }
-  .cube__layer--peeled .cube__zlabel {
-    opacity: 0;
+  .cube__ztick--front::after {
+    background: var(--accent);
+  }
+  .cube__ztick--live::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    border-radius: var(--r-pill);
+    background: var(--live);
+    vertical-align: 1px;
   }
   .cube__layer--live.cube__layer--front
     .cube__cell:not(.cube__cell--hidden, .cube__cell--none) {
@@ -1121,19 +1159,43 @@
       grid-column: 1;
     }
     .cube__stage {
-      --label-w: 76px;
-      --zlabel-w: 62px;
-      --depth: 14px;
+      --label-w: 66px;
+      --depth: 26px;
+      --zroom: calc((var(--layers) - 1) * var(--depth) * 0.25);
+      --cell: clamp(
+        20px,
+        calc((100cqw - var(--label-w) - var(--zroom) - 12px) / var(--cols)),
+        48px
+      );
+      margin-inline: calc(var(--s4) * -1);
+      padding-inline: 6px;
+      padding-top: calc((var(--layers) - 1) * var(--depth) * 0.62 + 40px);
+      border-radius: 0;
     }
     .cube__ylabel {
-      font-size: var(--fs-12);
+      font-size: 11px;
     }
-    .cube__stage {
-      --zlabel-w: 0px;
+    .cube__ztick {
+      font-size: 11px;
     }
-    .cube__zlabel,
+    .cube__zlive {
+      display: none;
+    }
+    /* A picked night's genre labels sit where the peeled ticks would. */
+    .cube__ztick--peeled {
+      visibility: hidden;
+    }
     .cube__ampm {
       display: none;
+    }
+    .cube__cell {
+      font-size: 10px;
+    }
+    .cube__value {
+      display: none;
+    }
+    .cube__short {
+      display: inline;
     }
     .kpi__value {
       font-size: 20px;

@@ -544,3 +544,31 @@ test("the genre cube is operable without a pointer and has a table alternative",
   assert.match(html, /&lt; 5/);
   assert.match(html, /aria-hidden="true"[^>]*class="cube__scene/);
 });
+
+test("the cube's depth axis names every night once and back layers draw only filled cells", () => {
+  const model = cubeModel(liveNight, history.generosPorHora);
+  const html = renderToStaticMarkup(
+    createElement(GenreCube, { model, reducedMotion: true }),
+  );
+  const ticks = [
+    ...html.matchAll(/class="cube__ztick[^"]*"[^>]*>([^<]+)</g),
+  ].map((m) => m[1]);
+  assert.deepEqual(
+    ticks,
+    model.layers.map((l) => l.label),
+  );
+  assert.match(
+    html,
+    />vie 28 nov<span class="cube__zlive"> · en vivo<\/span><\/span>/,
+  );
+  assert.match(
+    html,
+    /class="cube__ztick cube__ztick--front cube__ztick--live"/,
+  );
+  const back = html.split('class="cube__layer cube__layer--back')[1] ?? "";
+  assert.ok(back.length > 0);
+  assert.doesNotMatch(
+    back.split('class="cube__layer ')[0],
+    /cube__cell--(none|hidden)/,
+  );
+});
