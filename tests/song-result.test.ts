@@ -8,7 +8,8 @@ import {
   SongResultRow,
   SongSuggestion,
 } from "../src/components/owner/song-result";
-import type { Song } from "../src/lib/admin-api";
+import { AdminApi, isGenre, type Song } from "../src/lib/admin-api";
+import { isQueueSong, isSong } from "../src/lib/demo-contracts";
 import { safeThumbnailUrl } from "../src/lib/thumbnail";
 
 const song: Song = {
@@ -140,4 +141,57 @@ test("the stack layout never grows past its container because of long unbroken c
   const text = /\.suggestion__text > \* \{([^}]*)\}/.exec(css)?.[1] ?? "";
   assert.match(text, /text-overflow:\s*ellipsis/);
   assert.match(text, /white-space:\s*nowrap/);
+});
+
+test("results and suggestions show the genre as a small tag, omitted when unknown", () => {
+  const tagged = row({ genero: "Pop latino" });
+  assert.match(
+    tagged,
+    /<span class="tag" title="Pop latino"><span class="sr-only">Género: <\/span>Pop latino<\/span>/,
+  );
+  for (const genero of [null, undefined, "   "]) {
+    const html = row({ genero });
+    assert.doesNotMatch(html, /class="tag"|Género/, String(genero));
+    // Artist and duration stay visible without a genre.
+    assert.match(html, />Juanes</);
+    assert.match(html, /class="song-thumb__time">4:08</);
+  }
+  const suggested = suggestion(false, false, { genero: "Reguetón" });
+  assert.match(suggested, /class="tag" title="Reguetón"/);
+  assert.match(suggested, /class="meta__time">4:08</);
+  assert.match(suggested, /<span>Juanes<\/span>/);
+  assert.doesNotMatch(suggestion(), /class="tag"/);
+});
+
+test("verified artists are marked without joining meta text with middle dots", () => {
+  const html = row({ artistaVerificado: true });
+  assert.match(html, /Artista verificado/);
+  assert.doesNotMatch(html, / · /);
+});
+
+test("song guards accept a missing or null genre and reject malformed ones", () => {
+  const base = { ...song } as Record<string, unknown>;
+  delete base.genero;
+  assert.equal(isSong(base), true, "missing genre is accepted as null");
+  assert.equal(isSong({ ...song, genero: null }), true);
+  assert.equal(isSong({ ...song, genero: "Salsa" }), true);
+  assert.equal(
+    isQueueSong({ ...song, canal: undefined, genero: "Cumbia" }),
+    true,
+  );
+  for (const genero of [42, true, {}, "x".repeat(81)])
+    assert.equal(isSong({ ...song, genero }), false, String(genero));
+  assert.equal(isGenre(undefined), true);
+});
+
+test("catalog search accepts results with and without genre and rejects malformed genre", async () => {
+  const page = (resultados: unknown[]) =>
+    new AdminApi(async () =>
+      Response.json({ resultados, siguientePagina: null }),
+    ).search("juanes");
+  const { genero: _omit, ...legacy } = { ...song, genero: null };
+  const value = await page([legacy, { ...song, genero: "Pop latino" }]);
+  assert.equal(value.resultados[0].genero ?? null, null);
+  assert.equal(value.resultados[1].genero, "Pop latino");
+  await assert.rejects(page([{ ...song, genero: 7 }]), /respuesta no válida/);
 });

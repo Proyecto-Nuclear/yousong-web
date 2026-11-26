@@ -108,9 +108,9 @@ test("an invalid saved zone shows a friendly, described error", () => {
 
 test("dialog autofocuses the safe choice and disables both actions while busy", () => {
   const props = {
-    title: "¿Finalizar la sesión de esta noche?",
-    confirmLabel: "Finalizar sesión",
-    cancelLabel: "Seguir con la sesión",
+    title: "¿Cerrar la noche?",
+    confirmLabel: "Cerrar la noche",
+    cancelLabel: "Seguir con la noche",
     onConfirm() {},
     onCancel() {},
   };
@@ -119,15 +119,15 @@ test("dialog autofocuses the safe choice and disables both actions while busy", 
   );
   assert.match(
     idle,
-    /<button[^>]*autofocus=""[^>]*>Seguir con la sesión<\/button>/,
+    /<button[^>]*autofocus=""[^>]*>Seguir con la noche<\/button>/,
   );
-  assert.doesNotMatch(idle, /autofocus=""[^>]*>Finalizar sesión</);
+  assert.doesNotMatch(idle, /autofocus=""[^>]*>Cerrar la noche</);
   const busy = renderToStaticMarkup(
     createElement(ConfirmDialog, { ...props, open: true, busy: true }),
   );
   assert.match(
     busy,
-    /<button[^>]*disabled=""[^>]*>Seguir con la sesión<\/button>/,
+    /<button[^>]*disabled=""[^>]*>Seguir con la noche<\/button>/,
   );
   assert.match(busy, /<button[^>]*disabled=""[^>]*>Un momento…<\/button>/);
 });

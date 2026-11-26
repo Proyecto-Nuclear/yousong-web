@@ -52,7 +52,7 @@ export function EstablishmentForm({
           <h2 className="card__title">Crea tu local</h2>
           <p className="card__text">
             Con el nombre y la zona horaria basta para empezar. Después podrás
-            preparar la lista y abrir la sesión.
+            preparar la lista y abrir la noche.
           </p>
         </div>
       )}
@@ -202,8 +202,8 @@ export function EstablishmentForm({
                 <span>Local activo</span>
               </label>
               <p id={ids.active} className="field__hint">
-                Si lo desactivas, nadie podrá unirse. Finaliza la sesión antes
-                de hacerlo. El enlace del QR ({current.qrSlug}) no cambia.
+                Si lo desactivas, nadie podrá unirse. Cierra la noche antes de
+                hacerlo. El enlace del QR ({current.qrSlug}) no cambia.
               </p>
             </div>
           )}

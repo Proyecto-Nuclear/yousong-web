@@ -3,12 +3,15 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { DemoApi } from "../../lib/demo-api";
 import { isRotation, ROTATION } from "../../lib/demo-contracts";
-import { songMeta, songsLabel } from "../../lib/format";
+import { songsLabel } from "../../lib/format";
 import { ListDraft } from "../../lib/list-draft";
 import { Cover } from "../cover";
-import { CatalogPicker } from "./catalog-picker";
+import { QueueIcon, SearchIcon } from "../icons";
+import { CATALOG_SEARCH_ID, CatalogPicker } from "./catalog-picker";
 import { EmptyState, ErrorCallout, Loading, SkeletonRows } from "./feedback";
+import { SongMeta } from "./song-meta";
 import { useNotify } from "./toast";
+import { TrendingSongs } from "./trending";
 
 const ROTATION_LABEL = {
   [ROTATION.SEQUENTIAL]: "En orden",
@@ -60,10 +63,12 @@ export function ListConfiguration({
             Lista predeterminada
           </h2>
           <p className="card__meta">
-            Suena cuando nadie ha pedido canciones. Se usa al abrir la sesión.
+            Suena cuando nadie ha pedido canciones. Se usa al abrir la noche.
           </p>
         </div>
-        <span className="chip">{songsLabel(state.songs.length)}</span>
+        <span className={`chip${state.songs.length ? " chip--accent" : ""}`}>
+          {songsLabel(state.songs.length)}
+        </span>
       </div>
       {state.busy && <Loading />}
       {!notify && state.notice && !state.busy && (
@@ -146,23 +151,46 @@ export function ListConfiguration({
                   </label>
                 </div>
                 {state.loaded && !state.songs.length ? (
-                  <EmptyState title="Tu lista está vacía">
-                    Busca canciones abajo y añádelas. Necesitas al menos una
-                    para abrir la sesión.
+                  <EmptyState
+                    title="Tu lista está vacía"
+                    icon={<QueueIcon size={22} />}
+                    action={
+                      <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={() =>
+                          document.getElementById(CATALOG_SEARCH_ID)?.focus()
+                        }
+                      >
+                        <SearchIcon size={18} />
+                        Buscar canciones
+                      </button>
+                    }
+                  >
+                    Busca canciones o añade tendencias. Necesitas al menos una
+                    para abrir la noche.
                   </EmptyState>
                 ) : (
                   <ol className="song-list" aria-label="Canciones del borrador">
                     {state.songs.map((song, index) => (
-                      <li key={song.videoId} className="song-row">
+                      <li
+                        key={song.videoId}
+                        className="song-row song-row--numbered"
+                      >
+                        <span className="song-row__index" aria-hidden="true">
+                          {index + 1}
+                        </span>
                         <Cover title={song.titulo} size={40} />
                         <div>
                           <p className="song-row__title">
                             <span className="sr-only">{index + 1}. </span>
                             {song.titulo}
                           </p>
-                          <p className="song-row__meta">
-                            {songMeta(song.artista, song.duracionSegundos)}
-                          </p>
+                          <SongMeta
+                            artist={song.artista}
+                            genre={song.genero}
+                            seconds={song.duracionSegundos}
+                          />
                         </div>
                         <button
                           type="button"
@@ -196,6 +224,12 @@ export function ListConfiguration({
               selected={state.songs.map((song) => song.videoId)}
               onPick={canManage ? (song) => model.pick(song) : undefined}
             />
+            <TrendingSongs
+              api={api}
+              active={active}
+              selected={state.songs.map((song) => song.videoId)}
+              onPick={canManage ? (song) => model.pick(song) : undefined}
+            />
           </fieldset>
         </div>
       </div>
@@ -206,10 +240,16 @@ export function ListConfiguration({
         <div className="disclosure__body">
           {state.current ? (
             <>
-              <p className="card__subtitle">
-                {state.current.nombre} · Versión {state.current.version} ·{" "}
-                {ROTATION_LABEL[state.current.politicaRotacion]}
-              </p>
+              <div>
+                <p className="card__subtitle">{state.current.nombre}</p>
+                <p className="meta">
+                  <span>Versión {state.current.version}</span>
+                  <span className="tag">
+                    {ROTATION_LABEL[state.current.politicaRotacion]}
+                  </span>
+                  <span>{songsLabel(state.current.canciones.length)}</span>
+                </p>
+              </div>
               <ol className="song-list">
                 {state.current.canciones.map((song) => (
                   <li key={song.cancionId} className="song-row">
@@ -221,12 +261,10 @@ export function ListConfiguration({
                       <p className="song-row__title">
                         {song.titulo ?? song.youtubeVideoId}
                       </p>
-                      <p className="song-row__meta">
-                        {songMeta(
-                          song.artista ?? "Artista sin información",
-                          song.duracionSegundos,
-                        )}
-                      </p>
+                      <SongMeta
+                        artist={song.artista ?? "Artista sin información"}
+                        seconds={song.duracionSegundos}
+                      />
                     </div>
                   </li>
                 ))}
@@ -235,13 +273,21 @@ export function ListConfiguration({
           ) : (
             <p className="muted">Todavía no has guardado una lista.</p>
           )}
-          {state.history.map((item) => (
-            <p key={item.id} className="status-line">
-              Versión {item.version} · {item.nombre} ·{" "}
-              {songsLabel(item.totalCanciones)}
-            </p>
-          ))}
-          {!state.history.length && (
+          {state.history.length ? (
+            <ul className="history" aria-label="Versiones guardadas">
+              {state.history.map((item) => (
+                <li key={item.id} className="history__item">
+                  <span className="history__version">
+                    Versión {item.version}
+                  </span>
+                  <span className="history__name">{item.nombre}</span>
+                  <span className="tabular">
+                    {songsLabel(item.totalCanciones)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
             <p className="status-line">Sin versiones anteriores.</p>
           )}
           <div>

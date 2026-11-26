@@ -12,7 +12,7 @@ async function AuthenticatedPanel() {
 }
 export default function Home() {
   return (
-    <Suspense fallback={<output>Cargando sesión de personal…</output>}>
+    <Suspense fallback={<output>Cargando tu panel…</output>}>
       <AuthenticatedPanel />
     </Suspense>
   );

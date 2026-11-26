@@ -10,7 +10,8 @@ const GET_PATHS = [
   /^\/api\/mi-establecimiento$/,
   /^\/api\/mi-establecimiento\/(sesion-actual|qr|lista-defecto|listas-defecto)$/,
   /^\/api\/mi-establecimiento\/catalogo\/(busqueda|sugerencias)$/,
-  /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}(?:\/cola)?$/,
+  /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}(?:\/(?:cola|destacadas))?$/,
+  /^\/api\/public\/tendencias$/,
 ];
 const POST_PATHS = [
   /^\/api\/mi-establecimiento\/sesiones$/,
@@ -138,6 +139,19 @@ export async function proxyRequest(
       )
     )
       return reply(400, "INVALID_QUERY");
+  } else if (
+    /^\/api\/public\/establecimientos\/[^/]+\/destacadas$/.test(path)
+  ) {
+    // Only an optional, single `dias` between 1 and 365.
+    const keys = [...url.searchParams.keys()];
+    const dias = url.searchParams.getAll("dias");
+    if (
+      keys.some((key) => key !== "dias") ||
+      dias.length > 1 ||
+      (dias.length === 1 &&
+        (!/^[1-9][0-9]{0,2}$/.test(dias[0]) || Number(dias[0]) > 365))
+    )
+      return reply(400, "INVALID_PERIOD");
   } else if (url.search) return reply(404, "NOT_FOUND");
   if (request.method !== "GET" && !sameOrigin(request, options.appUrl))
     return reply(403, "INVALID_ORIGIN");

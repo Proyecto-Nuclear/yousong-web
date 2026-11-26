@@ -40,6 +40,19 @@ export interface Song {
   canal: string;
   duracionSegundos: number | null;
   miniaturaUrl: string | null;
+  /**
+   * Spanish genre label, null when unknown. Older backends omit the field;
+   * readers treat a missing value exactly like null.
+   */
+  genero?: string | null;
+}
+/** Accepts a missing, null or bounded genre label (see Song.genero). */
+export function isGenre(value: unknown): value is string | null | undefined {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.length <= 80)
+  );
 }
 export interface SearchPage {
   resultados: Song[];
@@ -128,6 +141,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   ESTABLISHMENT_INACTIVE: "El establecimiento está inactivo.",
   INVALID_QUERY: "Escribe una búsqueda de 2 a 100 caracteres.",
   INVALID_PAGE: "La página de búsqueda no es válida.",
+  INVALID_PERIOD: "El periodo debe estar entre 1 y 365 días.",
+  NOT_FOUND: "No se encontró el establecimiento público.",
+  ESTABLISHMENT_NOT_FOUND: "No se encontró el establecimiento público.",
 };
 export class ApiError extends Error {
   constructor(
@@ -281,7 +297,8 @@ export class AdminApi {
             (s.duracionSegundos === null ||
               (Number.isInteger(s.duracionSegundos) &&
                 Number(s.duracionSegundos) >= 0)) &&
-            (s.miniaturaUrl === null || typeof s.miniaturaUrl === "string"),
+            (s.miniaturaUrl === null || typeof s.miniaturaUrl === "string") &&
+            isGenre(s.genero),
         ),
     );
   }

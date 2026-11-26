@@ -1,13 +1,16 @@
-// Deterministic generated cover art. Remote thumbnails are intentionally not
-// fetched (see README), so each song gets an abstract tile derived from its
-// title: same title, same tile, on every screen and every reload.
+// Deterministic generated cover art for queue and list rows (search results
+// use validated YouTube thumbnails, see README): an abstract tile derived from
+// the title, so the same title gets the same tile on every screen and reload.
 
+// Palettes come from the "Noche de verbena" tokens (globals.css): night planes,
+// mango, aqua and the violet/lilac accents. Covers are decorative only.
 export const COVER_PALETTES = [
-  { ground: "#2F4A2C", ink: "#CBDDB0", detail: "#E9F0DC" }, // sage
-  { ground: "#1E3550", ink: "#B8D8FF", detail: "#E4F0FF" }, // night blue
-  { ground: "#4A2F26", ink: "#D8A98C", detail: "#F3DDCF" }, // clay
-  { ground: "#CBDDB0", ink: "#2F4A2C", detail: "#1E3550" }, // pale sage
-  { ground: "#B8D8FF", ink: "#1E3550", detail: "#4A2F26" }, // pale blue
+  { ground: "#2A2243", ink: "#FFB547", detail: "#F6F1FF" }, // mango on night
+  { ground: "#14101F", ink: "#3DD6C6", detail: "#FFB547" }, // aqua on night
+  { ground: "#5B3FD0", ink: "#F6F1FF", detail: "#3DD6C6" }, // violet
+  { ground: "#FFB547", ink: "#1B1530", detail: "#5B3FD0" }, // mango ground
+  { ground: "#3DD6C6", ink: "#1B1530", detail: "#F6F1FF" }, // aqua ground
+  { ground: "#ECE6F6", ink: "#5B3FD0", detail: "#FFB547" }, // pale lilac
 ] as const;
 
 export const COVER_MOTIFS = [

@@ -13,23 +13,28 @@ import {
 } from "@/lib/owner-copy";
 import { timeZoneLabel } from "@/lib/time-zones";
 import {
-  ArrowRightIcon,
+  ArrowUpIcon,
   BrandMark,
   CheckIcon,
   CloseIcon,
+  ExternalIcon,
   HeadphonesIcon,
   LogoutIcon,
   PauseIcon,
   PlayIcon,
+  QrIcon,
   RefreshIcon,
   StopIcon,
   WrenchIcon,
 } from "./icons";
+import { Analytics } from "./owner/analytics";
+import { Bunting } from "./owner/bunting";
 import { ConfirmDialog } from "./owner/confirm-dialog";
 import { EstablishmentForm } from "./owner/establishment-form";
 import { ErrorCallout, Loading } from "./owner/feedback";
 import { ListConfiguration } from "./owner/list-configuration";
 import { OwnerNavigation } from "./owner/navigation";
+import { NightChip } from "./owner/night-chip";
 import { QrCard } from "./owner/qr-card";
 import { QueuePanel } from "./owner/queue-panel";
 import { ThemeControls } from "./owner/theme-controls";
@@ -46,7 +51,7 @@ type OwnerControl = (typeof OWNER_CONTROL)[keyof typeof OWNER_CONTROL];
 const message = ownerError;
 const READY = "Tu público ya puede unirse con el QR.";
 const NOT_READY =
-  "Ahora nadie puede unirse: revisa la sesión y el horario del local.";
+  "Ahora nadie puede unirse: revisa la noche y el horario del local.";
 const CHECKING = "Comprobando si tu público puede unirse…";
 
 export function AdminPanel(props: { authenticated: boolean; roles: string[] }) {
@@ -57,22 +62,6 @@ export function AdminPanel(props: { authenticated: boolean; roles: string[] }) {
         {...props}
       />
     </ToastProvider>
-  );
-}
-
-function StatusChip({ session }: { session: Session | null }) {
-  const tone =
-    session?.estado === "ABIERTA"
-      ? "chip--live"
-      : session?.estado === "PAUSADA"
-        ? "chip--paused"
-        : "chip--off";
-  return (
-    <span className={`chip chip--compact ${tone}`}>
-      <span className="chip__text">
-        {session ? sessionNotice(session.estado) : "Sin sesión"}
-      </span>
-    </span>
   );
 }
 
@@ -240,14 +229,14 @@ function AdminPanelContent({
         requestAnimationFrame(() => headingRef.current?.focus());
         say(
           result.pendientesAlCierre
-            ? `Sesión finalizada. Quedaron ${plural(result.pendientesAlCierre, "solicitud", "solicitudes")} sin sonar.`
-            : "Sesión finalizada. No quedaron solicitudes pendientes.",
+            ? `Noche cerrada. Quedaron ${plural(result.pendientesAlCierre, "solicitud", "solicitudes")} sin sonar.`
+            : "Noche cerrada. No quedaron solicitudes pendientes.",
         );
       } else {
         const result = await api.openSession(selected.id);
         if (version !== generation.current) return;
         setSession(result);
-        say("Sesión abierta. Ya puedes compartir el QR.");
+        say("Noche abierta. Ya puedes compartir el QR.");
       }
       setLoaded(true);
       await refreshAvailability(api, selected, version);
@@ -347,18 +336,19 @@ function AdminPanelContent({
       <header className="topbar">
         <a className="topbar__brand" href="/" aria-label="YouSong, inicio">
           <BrandMark size={30} />
+          <span className="topbar__word" aria-hidden="true">
+            YouSong
+          </span>
         </a>
         {selected && (
           <span className="venue">
-            <span className="venue__icon hide-xs">
-              <HeadphonesIcon size={18} />
-            </span>
+            <HeadphonesIcon size={18} className="venue__icon hide-xs" />
             <span className="venue__name">{selected.nombre}</span>
           </span>
         )}
         <span className="topbar__spacer" />
         <div className="topbar__actions">
-          {selected && <StatusChip session={loaded ? session : null} />}
+          {selected && <NightChip session={loaded ? session : null} />}
           <ThemeControls />
           {authenticated && (
             <form action={logout}>
@@ -393,8 +383,8 @@ function AdminPanelContent({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Vista de cliente
-                <ArrowRightIcon size={18} />
+                <ExternalIcon size={18} />
+                Abrir enlace de acceso
                 <span className="sr-only">(se abre en otra pestaña)</span>
               </a>
             )}
@@ -457,7 +447,8 @@ function AdminPanelContent({
             />
           )}
           {!api ? (
-            <section className="card signin" aria-labelledby="signin-title">
+            <section className="stage signin" aria-labelledby="signin-title">
+              <Bunting />
               <BrandMark size={44} className="signin__mark" />
               <h1 id="signin-title" className="signin__title">
                 {authenticated ? "Preparando tu local" : "Entra a tu panel"}
@@ -465,10 +456,26 @@ function AdminPanelContent({
               <p className="card__text">
                 {authenticated
                   ? busy
-                    ? "Cargando tu local, la sesión y el QR…"
+                    ? "Cargando tu local, la noche y el QR…"
                     : "No pudimos cargar tu local. Revisa la conexión y vuelve a intentarlo."
-                  : "Abre la sesión de la noche, comparte el QR y controla la cola que vota tu público."}
+                  : "Abre la noche, comparte el QR y controla la cola que vota tu público."}
               </p>
+              {!authenticated && (
+                <ul className="signin__steps">
+                  <li>
+                    <PlayIcon size={20} />
+                    Abres la noche cuando empieza la música.
+                  </li>
+                  <li>
+                    <QrIcon size={20} />
+                    Tu público entra escaneando el QR.
+                  </li>
+                  <li>
+                    <ArrowUpIcon size={20} />
+                    Piden canciones y votan; tú ves la cola en vivo.
+                  </li>
+                </ul>
+              )}
               {authenticated ? (
                 <button
                   className="btn btn--primary"
@@ -523,23 +530,21 @@ function AdminPanelContent({
                   </details>
                 )}
                 {view === VIEW.PANEL && loaded && !session && (
-                  <div className="callout">
-                    <PlayIcon size={20} />
+                  <div className="callout callout--invite">
+                    <PlayIcon size={24} />
                     <div className="callout__body">
-                      <p className="callout__title">La sesión está cerrada</p>
+                      <p className="callout__title">La noche está sin abrir</p>
                       <p className="muted">
                         Ábrela para que tu público pueda unirse con el QR y
                         pedir canciones.
                       </p>
-                      <div>
-                        <button
-                          type="button"
-                          className="btn btn--small"
-                          onClick={() => go(VIEW.SESSION)}
-                        >
-                          Ir a Sesión y QR
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--small"
+                        onClick={() => go(VIEW.SESSION)}
+                      >
+                        Ir a Noche y QR
+                      </button>
                     </div>
                   </div>
                 )}
@@ -567,10 +572,10 @@ function AdminPanelContent({
                       aria-labelledby="controls-title"
                     >
                       <h2 id="controls-title" className="card__title">
-                        Controles de sesión
+                        Controles de la noche
                       </h2>
                       {!loaded ? (
-                        <Loading label="Comprobando la sesión…" />
+                        <Loading label="Comprobando la noche…" />
                       ) : session ? (
                         <>
                           <div className="stack stack--tight">
@@ -632,15 +637,15 @@ function AdminPanelContent({
                               onClick={() => setClosing(true)}
                             >
                               <StopIcon size={20} />
-                              Finalizar sesión
+                              Cerrar la noche
                             </button>
                           )}
                         </>
                       ) : (
                         <>
                           <p className="card__text">
-                            No hay una sesión abierta. Ábrela para que tu
-                            público pueda unirse con el QR.
+                            La noche está sin abrir. Ábrela para que tu público
+                            pueda unirse con el QR.
                           </p>
                           <ul
                             className="checklist"
@@ -681,7 +686,7 @@ function AdminPanelContent({
                               onClick={() => void mutate()}
                             >
                               <PlayIcon size={20} />
-                              Abrir sesión
+                              Abrir la noche
                             </button>
                           )}
                           <p className="status-line">
@@ -721,6 +726,15 @@ function AdminPanelContent({
                     </section>
                   </div>
                 )}
+                {view === VIEW.ANALYTICS && (
+                  <Analytics
+                    key={`analytics:${selected.id}`}
+                    api={api}
+                    qrSlug={selected.qrSlug}
+                    timeZone={selected.zonaHoraria}
+                    onOpenNight={() => go(VIEW.SESSION)}
+                  />
+                )}
                 {(view === VIEW.PANEL || view === VIEW.QUEUE) && (
                   <QueuePanel
                     key={`queue:${view}:${selected.id}:${session?.id ?? "none"}:${session?.estado}:${selected.pausado}:${selected.enMantenimiento}:${loaded}`}
@@ -729,6 +743,7 @@ function AdminPanelContent({
                     session={loaded ? session : null}
                     showPlaybackControls={view === VIEW.PANEL}
                     onShowAll={() => go(VIEW.QUEUE)}
+                    onShowQr={() => go(VIEW.SESSION)}
                   />
                 )}
               </>
@@ -738,9 +753,9 @@ function AdminPanelContent({
       </main>
       <ConfirmDialog
         open={closing}
-        title="¿Finalizar la sesión de esta noche?"
-        confirmLabel="Finalizar sesión"
-        cancelLabel="Seguir con la sesión"
+        title="¿Cerrar la noche?"
+        confirmLabel="Cerrar la noche"
+        cancelLabel="Seguir con la noche"
         busy={busy}
         onConfirm={() => void mutate()}
         onCancel={() => setClosing(false)}

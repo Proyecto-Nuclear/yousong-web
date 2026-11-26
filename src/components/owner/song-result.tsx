@@ -6,6 +6,7 @@ import { formatDuration } from "../../lib/format";
 import { safeThumbnailUrl } from "../../lib/thumbnail";
 import { Cover } from "../cover";
 import { CheckIcon } from "../icons";
+import { GenreTag } from "./song-meta";
 
 /** 16:9 thumbnail like a YouTube result, with the duration on its corner; falls back to the generated cover. */
 export function SongThumbnail({
@@ -51,7 +52,7 @@ export function SongThumbnail({
   );
 }
 
-/** One search result: thumbnail, two-line title, channel and the add action. Long text never leaves the row. */
+/** One search result: thumbnail with duration, two-line title, artist, genre, channel and the add action. Long text never leaves the row. */
 export function SongResultRow({
   song,
   added,
@@ -75,13 +76,19 @@ export function SongResultRow({
         <p className="song-row__title" title={song.titulo}>
           {song.titulo}
         </p>
-        <p className="song-row__meta">
-          {song.artista}
-          {song.artistaVerificado ? " · Artista verificado" : ""}
+        <p className="meta">
+          <span className="meta__artist">{song.artista}</span>
+          {song.artistaVerificado && (
+            <span className="meta__verified">
+              <CheckIcon size={14} />
+              Artista verificado
+            </span>
+          )}
         </p>
-        {showChannel && (
-          <p className="song-row__meta song-row__meta--soft">
-            Canal: {song.canal}
+        {(showChannel || song.genero) && (
+          <p className="meta song-row__meta--soft">
+            <GenreTag genre={song.genero} />
+            {showChannel && <span>Canal: {song.canal}</span>}
           </p>
         )}
         {formatDuration(song.duracionSegundos) === null && (
@@ -122,6 +129,7 @@ export function SongSuggestion({
   full: boolean;
   onPick: (song: Song) => void;
 }) {
+  const duration = formatDuration(song.duracionSegundos);
   return (
     <button
       type="button"
@@ -142,7 +150,11 @@ export function SongSuggestion({
       />
       <span className="suggestion__text">
         <strong title={song.titulo}>{song.titulo}</strong>
-        <span className="suggestion__sub">{song.artista}</span>
+        <span className="suggestion__sub">
+          <span>{song.artista}</span>
+          <GenreTag genre={song.genero} />
+          {duration && <span className="meta__time">{duration}</span>}
+        </span>
       </span>
       <span className="suggestion__action" aria-hidden="true">
         {added ? <CheckIcon size={16} /> : null}

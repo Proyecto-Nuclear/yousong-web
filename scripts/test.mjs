@@ -23,11 +23,13 @@ try {
       "--jsx",
       "react-jsx",
       "tests/admin-api.test.ts",
+      "tests/analytics.test.ts",
       "tests/auth.test.ts",
       "tests/demo.test.ts",
       "tests/design.test.ts",
       "tests/owner-ui.test.ts",
       "tests/song-result.test.ts",
+      "tests/trending.test.ts",
     ],
     { stdio: "inherit" },
   );
@@ -39,11 +41,13 @@ try {
         [
           "--test",
           join(temp, "tests/admin-api.test.js"),
+          join(temp, "tests/analytics.test.js"),
           join(temp, "tests/auth.test.js"),
           join(temp, "tests/demo.test.js"),
           join(temp, "tests/design.test.js"),
           join(temp, "tests/owner-ui.test.js"),
           join(temp, "tests/song-result.test.js"),
+          join(temp, "tests/trending.test.js"),
         ],
         {
           stdio: "inherit",

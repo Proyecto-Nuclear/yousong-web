@@ -1,15 +1,17 @@
 export const OWNER_VIEWS = {
   PANEL: "Panel operativo",
-  SESSION: "Sesión y QR",
+  SESSION: "Noche y QR",
   QUEUE: "Cola musical",
+  ANALYTICS: "Analítica",
   SETUP: "Configuración y listas",
 } as const;
 
 /** Short labels for the phone tab bar, keyed by the full view name. */
 export const OWNER_VIEW_SHORT: Record<string, string> = {
   [OWNER_VIEWS.PANEL]: "Panel",
-  [OWNER_VIEWS.SESSION]: "Sesión",
+  [OWNER_VIEWS.SESSION]: "Noche",
   [OWNER_VIEWS.QUEUE]: "Cola",
+  [OWNER_VIEWS.ANALYTICS]: "Analítica",
   [OWNER_VIEWS.SETUP]: "Ajustes",
 };
 
@@ -19,6 +21,8 @@ export const OWNER_VIEW_SUBTITLE: Record<string, string> = {
   [OWNER_VIEWS.SESSION]:
     "Abre la noche, comparte el QR y controla la participación.",
   [OWNER_VIEWS.QUEUE]: "Las solicitudes de tu público, ordenadas por votos.",
+  [OWNER_VIEWS.ANALYTICS]:
+    "Lo que más vota, pide y escucha tu público en tu local.",
   [OWNER_VIEWS.SETUP]:
     "La lista que suena cuando nadie pide y los datos del local.",
 };
@@ -40,17 +44,16 @@ const MESSAGES = {
   playing:
     "Ya hay una canción sonando. Termínala antes de pasar a la siguiente.",
   notPlaying: "No hay una canción sonando. Revisa la cola.",
-  noList:
-    "Guarda una lista en Configuración y listas antes de abrir la sesión.",
+  noList: "Guarda una lista en Configuración y listas antes de abrir la noche.",
   slugTaken: "Ese enlace del QR ya lo usa otro local. Prueba con otro.",
   timeZone: "Elige una zona horaria de la lista.",
-  sessionInProgress: "Finaliza la sesión antes de desactivar el local.",
-  sessionOpen: "Ya hay una sesión abierta. Actualiza el estado.",
-  sessionClosed: "La sesión ya terminó. Actualiza el estado.",
-  paused: "La sesión está en pausa. Reanúdala para seguir.",
+  sessionInProgress: "Cierra la noche antes de desactivar el local.",
+  sessionOpen: "La noche ya está abierta. Actualiza el estado.",
+  sessionClosed: "La noche ya se cerró. Actualiza el estado.",
+  paused: "La noche está en pausa. Reanúdala para seguir.",
   servicePaused:
-    "El servicio del local está en pausa. Reanúdalo en Sesión y QR.",
-  maintenance: "El local está en mantenimiento. Termínalo en Sesión y QR.",
+    "El servicio del local está en pausa. Reanúdalo en Noche y QR.",
+  maintenance: "El local está en mantenimiento. Termínalo en Noche y QR.",
   inactive: "El local está desactivado. Actívalo en Configuración y listas.",
   rate: "Demasiadas acciones seguidas. Espera un momento y vuelve a intentarlo.",
   offline:
@@ -60,12 +63,19 @@ const MESSAGES = {
   listUncertain:
     "No pudimos confirmar el guardado. Revisa la lista antes de volver a guardar.",
   listLoad: "No pudimos cargar la lista. Intenta de nuevo.",
+  period: "Elige un periodo de 7, 30 o 90 días.",
+  venueMissing: "No encontramos los datos de tu local. Actualiza el estado.",
+  trendsOff:
+    "Las tendencias no están disponibles ahora. La búsqueda sigue funcionando.",
   queueChange:
     "No pudimos confirmar el cambio. Revisa la cola antes de intentarlo otra vez.",
   generic:
     "No pudimos confirmar la acción. Actualiza el estado antes de intentarlo otra vez.",
 } as const;
 const KNOWN = new Set<string>(Object.values(MESSAGES));
+
+/** Quiet line when the trends endpoint answers 503 (catalog off or busy). */
+export const TRENDS_UNAVAILABLE = MESSAGES.trendsOff;
 
 // Presentation-only translation. API error codes and transport contracts stay
 // authoritative; unexpected diagnostics never become owner-facing text.
@@ -104,16 +114,25 @@ export function ownerError(reason: unknown): string {
     [/conectar con la API/i, MESSAGES.offline],
     [/confirmar el cambio/i, MESSAGES.queueChange],
     [/búsqueda de 2 a 100/i, MESSAGES.searchLength],
+    [/periodo/i, MESSAGES.period],
+    [/no se encontró el establecimiento/i, MESSAGES.venueMissing],
     [/datos|caracteres|tamaño|formato/i, MESSAGES.data],
   ];
   return rules.find(([pattern]) => pattern.test(text))?.[1] ?? MESSAGES.generic;
 }
 
-/** Session (music night) state as shown in chips; never the account login. */
+/**
+ * The music night's state as shown in chips. Owners read "sesión" as their
+ * account login, so the night is always called "noche"; the account keeps
+ * "Salir de la cuenta".
+ */
 export function sessionNotice(state: string): string {
-  if (state === "ABIERTA") return "Sesión activa";
-  if (state === "PAUSADA") return "Sesión en pausa";
-  if (state === "CERRANDO") return "Finalizando sesión";
-  if (state === "CERRADA") return "Sesión finalizada";
+  if (state === "ABIERTA") return "Noche abierta";
+  if (state === "PAUSADA") return "Noche en pausa";
+  if (state === "CERRANDO") return "Cerrando la noche";
+  if (state === "CERRADA") return "Noche cerrada";
   return "Estado por confirmar";
 }
+
+/** Chip text when no night is open (or it is still loading). */
+export const NIGHT_NOT_OPEN = "Noche sin abrir";

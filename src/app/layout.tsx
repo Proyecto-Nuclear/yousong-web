@@ -14,14 +14,14 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "YouSong · Panel del local",
   description:
-    "Panel para dueños de bares: abre la sesión, comparte el QR y controla la cola musical que vota tu público.",
+    "Panel para dueños de bares: abre la noche, comparte el QR y controla la cola musical que vota tu público.",
   applicationName: "YouSong",
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0e0f0e" },
-    { media: "(prefers-color-scheme: light)", color: "#f1f4f1" },
+    { media: "(prefers-color-scheme: dark)", color: "#14101f" },
+    { media: "(prefers-color-scheme: light)", color: "#f6f3fb" },
   ],
 };
 

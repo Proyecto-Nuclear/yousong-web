@@ -28,6 +28,12 @@ export function songMeta(artist: string, seconds: number | null | undefined) {
   return duration ? `${artist} · ${duration}` : artist;
 }
 
+/** Displayable genre label, or null when missing, null or blank. */
+export function genreLabel(value: string | null | undefined) {
+  const text = value?.trim();
+  return text ? text : null;
+}
+
 /** Estimated wait as shown next to each queued song. */
 export function waitLabel(seconds: number | null | undefined) {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds))
@@ -36,10 +42,32 @@ export function waitLabel(seconds: number | null | undefined) {
   return `Espera ~ ${Math.ceil(seconds / 60)} min`;
 }
 
+/**
+ * Estimated time until the last queued song finishes: its estimated wait plus
+ * its own duration (when known). Null when there is nothing queued.
+ */
+export function drainSeconds(
+  queue: {
+    esperaEstimadaSegundos: number;
+    cancion: { duracionSegundos: number | null };
+  }[],
+) {
+  const last = queue.at(-1);
+  if (!last) return null;
+  return last.esperaEstimadaSegundos + (last.cancion.duracionSegundos ?? 0);
+}
+
+/** "~ 40 min", "~ 1 h 05 min" for estimates shown as headline figures. */
+export function approxDuration(seconds: number) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes < 60) return `~ ${minutes} min`;
+  return `~ ${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}
+
 /** Operating date "2026-11-13" as "Noche del viernes 13 de noviembre". */
 export function nightLabel(operatingDate: string) {
   const date = new Date(`${operatingDate}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return "Sesión de esta noche";
+  if (Number.isNaN(date.getTime())) return "Noche de hoy";
   const text = date.toLocaleDateString("es", {
     weekday: "long",
     day: "numeric",

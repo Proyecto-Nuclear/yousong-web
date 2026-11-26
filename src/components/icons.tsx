@@ -171,13 +171,28 @@ export const SearchIcon = (p: IconProps) => (
     <path d="m20 20-4.4-4.4" />
   </Icon>
 );
+export const ClockIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Icon>
+);
+export const TrendIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m4 16.5 5-5 3.5 3.5L20 7.5" />
+    <path d="M15 7.5h5v5" />
+  </Icon>
+);
 export const WrenchIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M14.5 5.2a4.5 4.5 0 0 0-5.4 5.9L4.6 15.6a1.9 1.9 0 0 0 2.7 2.7l4.5-4.5a4.5 4.5 0 0 0 5.9-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
   </Icon>
 );
 
-/** The YouSong mark: two leaves meeting in a "Y", as in the prototypes. */
+/**
+ * The YouSong mark: two leaves meeting in a "Y", as in the prototypes. The
+ * left leaf takes the live color (aqua/teal) and the right one currentColor.
+ */
 export function BrandMark({ size = 32, ...props }: IconProps) {
   return (
     <svg
@@ -189,7 +204,10 @@ export function BrandMark({ size = 32, ...props }: IconProps) {
       focusable="false"
       {...props}
     >
-      <path d="M4.5 5.5c4.6.2 8.6 2.4 10.6 7.2l-2.3 3.1C8.3 14.4 5.2 10.6 4.5 5.5Z" />
+      <path
+        style={{ fill: "var(--live, currentColor)" }}
+        d="M4.5 5.5c4.6.2 8.6 2.4 10.6 7.2l-2.3 3.1C8.3 14.4 5.2 10.6 4.5 5.5Z"
+      />
       <path d="M27.5 5.5c-.3 6.3-3.6 10.9-8.4 13.1-.1 4.4-1.6 7.6-4.6 9.9-1.4-3.7-1.4-7.6.6-11.1 2.4-6.6 6.6-10.9 12.4-11.9Z" />
     </svg>
   );
