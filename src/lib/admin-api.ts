@@ -144,6 +144,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_PERIOD: "El periodo debe estar entre 1 y 365 días.",
   NOT_FOUND: "No se encontró el establecimiento público.",
   ESTABLISHMENT_NOT_FOUND: "No se encontró el establecimiento público.",
+  SESSION_NOT_FOUND: "No se encontró la jornada.",
 };
 export class ApiError extends Error {
   constructor(
