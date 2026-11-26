@@ -1,5 +1,13 @@
 import { AdminApi, ApiError, checked, type Establishment } from "./admin-api";
 import {
+  type Analitica,
+  isAnalitica,
+  isJornada,
+  type Jornada,
+  nights,
+  uuid,
+} from "./analytics-contracts";
+import {
   type Availability,
   type DefaultList,
   type Finished,
@@ -156,6 +164,33 @@ export class DemoApi extends AdminApi {
         `/api/public/establecimientos/${encoded(qrSlug)}/destacadas?dias=${dias}`,
       ),
       isHighlights,
+    );
+  }
+  /** Published analytics of the last `jornadas` nights (1..30). */
+  async analytics(jornadas: number): Promise<Analitica> {
+    if (!nights(jornadas))
+      throw new Error("Pide entre 1 y 30 jornadas de analítica.");
+    return checked(
+      await this.request(
+        `/api/mi-establecimiento/analitica?jornadas=${jornadas}`,
+      ),
+      isAnalitica,
+    );
+  }
+  /**
+   * Live analytics of one night: the night in operation (else the latest
+   * closed one) when `sesionId` is omitted.
+   */
+  async nightAnalytics(sesionId?: string): Promise<Jornada> {
+    if (sesionId !== undefined && !uuid(sesionId))
+      throw new Error("Revisa los datos de la operación.");
+    return checked(
+      await this.request(
+        `/api/mi-establecimiento/analitica/jornada${
+          sesionId === undefined ? "" : `?sesionId=${encoded(sesionId)}`
+        }`,
+      ),
+      isJornada,
     );
   }
   async next(_scopeId: string): Promise<Started> {

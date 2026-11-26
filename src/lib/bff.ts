@@ -10,6 +10,7 @@ const GET_PATHS = [
   /^\/api\/mi-establecimiento$/,
   /^\/api\/mi-establecimiento\/(sesion-actual|qr|lista-defecto|listas-defecto)$/,
   /^\/api\/mi-establecimiento\/catalogo\/(busqueda|sugerencias)$/,
+  /^\/api\/mi-establecimiento\/analitica(?:\/jornada)?$/,
   /^\/api\/public\/establecimientos\/[a-z0-9-]{3,80}(?:\/(?:cola|destacadas))?$/,
   /^\/api\/public\/tendencias$/,
 ];
@@ -93,6 +94,15 @@ async function boundedJson(request: Request): Promise<unknown> {
     reader.releaseLock();
   }
 }
+/** True when the query holds nothing but at most one valid `key`. */
+function singleOptional(url: URL, key: string, pattern: RegExp) {
+  const values = url.searchParams.getAll(key);
+  return (
+    [...url.searchParams.keys()].every((name) => name === key) &&
+    values.length <= 1 &&
+    values.every((value) => pattern.test(value))
+  );
+}
 export function sameOrigin(request: Request, appUrl: string) {
   return request.headers.get("origin") === appUrl;
 }
@@ -152,6 +162,20 @@ export async function proxyRequest(
         (!/^[1-9][0-9]{0,2}$/.test(dias[0]) || Number(dias[0]) > 365))
     )
       return reply(400, "INVALID_PERIOD");
+  } else if (path === "/api/mi-establecimiento/analitica") {
+    // Only an optional, single `jornadas` between 1 and 30.
+    if (!singleOptional(url, "jornadas", /^(?:[1-9]|[12][0-9]|30)$/))
+      return reply(400, "INVALID_PERIOD");
+  } else if (path === "/api/mi-establecimiento/analitica/jornada") {
+    // Only an optional, single session UUID.
+    if (
+      !singleOptional(
+        url,
+        "sesionId",
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      )
+    )
+      return reply(400, "INVALID_QUERY");
   } else if (url.search) return reply(404, "NOT_FOUND");
   if (request.method !== "GET" && !sameOrigin(request, options.appUrl))
     return reply(403, "INVALID_ORIGIN");

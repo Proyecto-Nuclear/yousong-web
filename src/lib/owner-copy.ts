@@ -65,6 +65,8 @@ const MESSAGES = {
   listLoad: "No pudimos cargar la lista. Intenta de nuevo.",
   period: "Elige un periodo de 7, 30 o 90 días.",
   venueMissing: "No encontramos los datos de tu local. Actualiza el estado.",
+  nightMissing:
+    "No encontramos esa jornada. Elige otra o vuelve a la noche más reciente.",
   trendsOff:
     "Las tendencias no están disponibles ahora. La búsqueda sigue funcionando.",
   queueChange:
@@ -89,6 +91,7 @@ export function ownerError(reason: unknown): string {
   if (KNOWN.has(text)) return text;
   const rules: [RegExp, string][] = [
     [/permisos/i, MESSAGES.permissions],
+    [/no se encontró la jornada/i, MESSAGES.nightMissing],
     [/credencial|caducad|autentic/i, MESSAGES.signIn],
     [/catálogo.*configurado/i, MESSAGES.catalogMissing],
     [/presupuesto de búsquedas/i, MESSAGES.budget],

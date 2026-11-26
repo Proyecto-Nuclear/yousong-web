@@ -27,7 +27,7 @@ import {
   StopIcon,
   WrenchIcon,
 } from "./icons";
-import { Analytics } from "./owner/analytics";
+import { AnalyticsDashboard } from "./owner/analytics-board";
 import { Bunting } from "./owner/bunting";
 import { ConfirmDialog } from "./owner/confirm-dialog";
 import { EstablishmentForm } from "./owner/establishment-form";
@@ -727,7 +727,7 @@ function AdminPanelContent({
                   </div>
                 )}
                 {view === VIEW.ANALYTICS && (
-                  <Analytics
+                  <AnalyticsDashboard
                     key={`analytics:${selected.id}`}
                     api={api}
                     qrSlug={selected.qrSlug}
